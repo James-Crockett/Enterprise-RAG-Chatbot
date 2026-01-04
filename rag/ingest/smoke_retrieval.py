@@ -31,7 +31,7 @@ def main():
     index = faiss.IndexFlatIP(emb.shape[1])  # cosine when normalized
     index.add(emb)
 
-    query = "How do I request PTO?"
+    query = "How do I report laptop issues?"
     q = model.encode([query], normalize_embeddings=True).astype("float32")
     scores, ids = index.search(q, k=min(3, len(chunks)))
 
