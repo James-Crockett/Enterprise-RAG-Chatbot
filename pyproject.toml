@@ -19,6 +19,14 @@ dependencies = [
     "streamlit>=1.52.2",
     "uvicorn[standard]>=0.40.0",
     "requests>=2.32.5",
+    "psycopg[binary]>=3.3.2",
+    "sqlalchemy>=2.0.45",
+    "sqlmodel>=0.0.31",
+    "pgvector>=0.4.2",
+    "python-jose[cryptography]>=3.5.0",
+    "passlib[bcrypt]>=1.7.4",
+    "python-multipart>=0.0.21",
+    "bcrypt<4",
 ]
 
 [[tool.uv.index]]

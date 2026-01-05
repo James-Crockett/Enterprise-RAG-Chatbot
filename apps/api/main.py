@@ -1,38 +1,50 @@
 from __future__ import annotations
 
-import os
-from pathlib import Path
 from typing import Any, Dict, Optional, List
+from uuid import UUID
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Depends, HTTPException
 from pydantic import BaseModel
+from sqlmodel import Session, select
+from sqlalchemy import text as sql_text
+from sentence_transformers import SentenceTransformer
 
-from rag.retrieval.vectorstore import LocalVectorStore, RetrievedChunk
-from rag.generation.citations_only import build_citations_only_answer
+from apps.api.core.db import get_session
+from apps.api.core.security import verify_password, create_access_token
+from apps.api.core.deps import get_current_user
+from apps.api.models import User
 
 
+app = FastAPI(title="RAG Enterprise KB (pgvector)", version="0.2.0")
 
-INDEX_PATH = Path(os.getenv("INDEX_PATH", "storage/faiss/index.faiss"))
-CHUNKS_PATH = Path(os.getenv("CHUNKS_PATH", "storage/docstore/chunks.jsonl"))
-EMBED_MODEL = os.getenv("EMBED_MODEL", "sentence-transformers/all-MiniLM-L6-v2")
+# Embedder is loaded once (fast for repeated queries)
+EMBED_MODEL = "sentence-transformers/all-MiniLM-L6-v2"
+embedder = SentenceTransformer(EMBED_MODEL)
 
-app = FastAPI(title="RAG Enterprise KB (Retrieval API)", version="0.1.0")
 
-store: Optional[LocalVectorStore] = None
+# ---------- Schemas ----------
+class LoginRequest(BaseModel):
+    email: str
+    password: str
+
+
+class LoginResponse(BaseModel):
+    access_token: str
+    token_type: str = "bearer"
 
 
 class ChatRequest(BaseModel):
     query: str
     top_k: int = 5
-    filters: Optional[Dict[str, Any]] = None  # e.g. {"department": "hr"} or {"confidentiality": "restricted"}
+    filters: Optional[Dict[str, Any]] = None  # stored in chunks.metadata JSON
 
 
 class Citation(BaseModel):
-    source_path: str
-    page: Optional[int] = None
+    source_path: Optional[str] = None
     title: Optional[str] = None
     department: Optional[str] = None
-    confidentiality: Optional[str] = None
+    page: Optional[int] = None
+    access_level: Optional[int] = None
 
 
 class ChunkOut(BaseModel):
@@ -44,76 +56,145 @@ class ChunkOut(BaseModel):
 
 class ChatResponse(BaseModel):
     query: str
-    mode: str  # retrieval_only / citations_only
-    answer: str = ""  
+    answer: str = ""
+    mode: str = "citations_only"
     results: List[ChunkOut] = []
 
 
-@app.on_event("startup")
-def _startup():
-    global store
-    if not INDEX_PATH.exists() or not CHUNKS_PATH.exists():
-        print("Index not found. Run: python -m rag.ingest.build_index --input_dir data/raw")
-        return
-    store = LocalVectorStore(INDEX_PATH, CHUNKS_PATH, EMBED_MODEL)
-    print("VectorStore loaded")
+# ---------- Helpers ----------
+def citations_only_answer(query: str, chunks: List[str]) -> str:
+    """
+    Very simple answer for now:
+    - Take the most relevant chunk and return the first ~2 sentences.
+    We'll improve this (sentence scoring) later like before.
+    """
+    if not chunks:
+        return "I couldn't find relevant information in the knowledge base."
+    text = chunks[0].replace("\n", " ").strip()
+    # crude sentence split
+    parts = text.split(". ")
+    return ". ".join(parts[:2]).strip() + ("." if len(parts) > 0 and not text.endswith(".") else "")
 
 
+# ---------- Routes ----------
 @app.get("/health")
 def health():
-    ok = store is not None
-    return {"ok": ok, "index_path": str(INDEX_PATH), "chunks_path": str(CHUNKS_PATH)}
+    return {"ok": True, "embed_model": EMBED_MODEL}
+
+
+@app.post("/auth/login", response_model=LoginResponse)
+def login(req: LoginRequest, session: Session = Depends(get_session)):
+    user = session.exec(select(User).where(User.email == req.email)).first()
+    if not user or not user.is_active:
+        raise HTTPException(status_code=401, detail="Invalid credentials")
+    if not verify_password(req.password, user.hashed_password):
+        raise HTTPException(status_code=401, detail="Invalid credentials")
+
+    token = create_access_token({"sub": str(user.id)})
+    return LoginResponse(access_token=token)
 
 
 @app.post("/chat", response_model=ChatResponse)
-def chat(req: ChatRequest):
-    if store is None:
-        return ChatResponse(query=req.query, mode="retrieval_only", results=[])
+def chat(
+    req: ChatRequest,
+    session: Session = Depends(get_session),
+    user: User = Depends(get_current_user),
+):
+    # 1) Embed the query (normalize for cosine)
+    qvec_list = embedder.encode([req.query], normalize_embeddings=True)[0].tolist()
+    qvec = "[" + ",".join(str(x) for x in qvec_list) + "]"
 
-    hits = store.retrieve(req.query, k=req.top_k, filters=req.filters)
+    # 2) Build SQL:
+    #    - enforce permission: chunks.access_level <= user.max_access_level
+    #    - optional JSON metadata filters
+    where_clauses = ["access_level <= :max_level"]
+    alpha = 0.15  # keyword boost strength (tune 0.05–0.3)
+    params = {
+        "qvec": qvec,
+        "qtext": req.query,
+        "alpha": alpha,
+        "k": req.top_k,
+        "max_level": user.max_access_level,
+    }
 
-    results = []
-    for h in hits:
-        meta = h.metadata
-        citation = Citation(
-            source_path=meta.get("source_path", ""),
-            page=meta.get("page"),
-            title=meta.get("title"),
-            department=meta.get("department"),
-            confidentiality=meta.get("confidentiality"),
-        )
-        results.append(ChunkOut(chunk_id=h.chunk_id, score=h.score, text=h.text, citation=citation))
+    # params = {"qvec": qvec, "k": req.top_k, "max_level": user.max_access_level}
 
-    return ChatResponse(query=req.query, mode="retrieval_only", results=results)
 
-@app.post("/chat", response_model=ChatResponse)
-def chat(req: ChatRequest):
-    if store is None:
-        return ChatResponse(query=req.query, mode="retrieval_only", answer="", results=[])
+    if req.filters:
+        for key, val in req.filters.items():
+            where_clauses.append(f"(metadata->>:k_{key}) = :v_{key}")
+            params[f"k_{key}"] = key
+            params[f"v_{key}"] = str(val)
 
-    hits = store.retrieve(req.query, k=req.top_k, filters=req.filters)
+    where_sql = " AND ".join(where_clauses)
 
-    # Build a citations-only answer using the SAME embedder as retrieval (store.model)
-    answer, used_chunk_ids = build_citations_only_answer(
-        query=req.query,
-        chunks=hits,
-        embedder=store.model,
-        max_sentences=3,
+    stmt = sql_text(f"""
+    WITH q AS (
+    SELECT
+        CAST(:qvec AS vector) AS qvec,
+        plainto_tsquery('english', :qtext) AS tsq
     )
+    SELECT
+    c.id,
+    c.text,
+    c.metadata AS meta,
+    c.access_level,
+    (1 - (c.embedding <=> q.qvec)) AS vscore,
+    ts_rank_cd(to_tsvector('english', c.text), q.tsq) AS tscore,
+    ((1 - (c.embedding <=> q.qvec)) + (:alpha * ts_rank_cd(to_tsvector('english', c.text), q.tsq))) AS score
+    FROM chunks c, q
+    WHERE {where_sql}
+    ORDER BY score DESC
+    LIMIT :k
+    """)
 
-    results = []
-    for h in hits:
-        meta = h.metadata
+    # stmt = sql_text(f"""
+    # SELECT
+    # id,
+    # text,
+    # metadata AS meta,
+    # access_level,
+    # (1 - (embedding <=> CAST(:qvec AS vector))) AS score
+    # FROM chunks
+    # WHERE {where_sql}
+    # ORDER BY embedding <=> CAST(:qvec AS vector)
+    # LIMIT :k
+    # """)
+
+    rows = session.execute(stmt, params).all()
+
+    results: List[ChunkOut] = []
+    chunk_texts: List[str] = []
+
+    for r in rows:
+        meta = r.meta or {}
+        chunk_texts.append(r.text)
+
         citation = Citation(
-            source_path=meta.get("source_path", ""),
-            page=meta.get("page"),
+            source_path=meta.get("source_path"),
             title=meta.get("title"),
             department=meta.get("department"),
-            confidentiality=meta.get("confidentiality"),
+            page=meta.get("page"),
+            access_level=int(r.access_level),
         )
+        results.append({
+        "chunk_id": r.id,
+        "score": float(r.score),
+        "vector_score": float(r.vscore),
+        "keyword_score": float(r.tscore),
+        "text": r.text,
+        "citation": meta,
+    })
 
-        # Optional: mark whether this chunk contributed to answer
-        text = h.text
-        results.append(ChunkOut(chunk_id=h.chunk_id, score=h.score, text=text, citation=citation))
+        # results.append(
+        #     ChunkOut(
+        #         chunk_id=int(r.id),
+        #         score=float(r.score),
+        #         text=r.text,
+        #         citation=citation,
+        #     )
+        # )
 
-    return ChatResponse(query=req.query, mode="citations_only", answer=answer, results=results)
+    answer = citations_only_answer(req.query, chunk_texts)
+
+    return ChatResponse(query=req.query, answer=answer, mode="citations_only", results=results)
