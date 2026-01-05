@@ -1,8 +1,13 @@
 import requests
 import streamlit as st
+import os
 
-DEFAULT_API = "http://127.0.0.1:8000"
+DEFAULT_API = os.getenv("API_URL", "http://127.0.0.1:8000")
 API_URL = st.sidebar.text_input("API URL", DEFAULT_API).rstrip("/")
+
+
+# DEFAULT_API = "http://127.0.0.1:8000"
+# API_URL = st.sidebar.text_input("API URL", DEFAULT_API).rstrip("/")
 
 st.title("Enterprise KB Chatbot (Centralized, pgvector)")
 st.caption("Login + permission-aware retrieval backed by Postgres (pgvector)")

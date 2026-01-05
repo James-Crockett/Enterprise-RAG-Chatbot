@@ -1,0 +1,28 @@
+# Python
+.venv/
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+*.egg-info/
+dist/
+build/
+
+# Git
+.git/
+.gitignore
+
+# OS
+.DS_Store
+Thumbs.db
+
+# If you want docs available in container via volume mount, ignore them here.
+data/
+**/*.pdf
+
+# Docker
+**/.dockerignore
+
+# IDE
+.vscode/
+.idea/
