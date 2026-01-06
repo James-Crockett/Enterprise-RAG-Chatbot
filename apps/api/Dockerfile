@@ -1,4 +1,4 @@
-FROM python:3.11-slim
+FROM python:3.12-slim
 
 WORKDIR /app
 
@@ -9,6 +9,9 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 # Install uv
 RUN pip install --no-cache-dir uv
+
+ENV UV_PYTHON_DOWNLOADS=never
+ENV UV_PROJECT_ENVIRONMENT=/app/.venv
 
 # Copy only dependency files first (better caching)
 COPY pyproject.toml uv.lock* /app/
