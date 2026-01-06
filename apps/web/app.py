@@ -5,10 +5,6 @@ import os
 DEFAULT_API = os.getenv("API_URL", "http://127.0.0.1:8000")
 API_URL = st.sidebar.text_input("API URL", DEFAULT_API).rstrip("/")
 
-
-# DEFAULT_API = "http://127.0.0.1:8000"
-# API_URL = st.sidebar.text_input("API URL", DEFAULT_API).rstrip("/")
-
 st.title("Enterprise KB Chatbot (Centralized, pgvector)")
 st.caption("Login + permission-aware retrieval backed by Postgres (pgvector)")
 
@@ -104,19 +100,26 @@ if prompt:
                 st.error(f"Request failed: {e}")
                 st.stop()
 
-        answer = data.get("answer", "")
-        st.markdown(answer if answer else "_No answer returned._")
+    answer = data.get("answer", "")
+    st.markdown(answer if answer else "_No answer returned._")
 
-        # sources
-        results = data.get("results", [])
-        if results:
-            st.markdown("**Sources**")
-            for r in results:
-                c = r.get("citation", {})
-                label = f"{c.get('title','(no title)')} • {c.get('source_path','')} • page={c.get('page')}"
-                with st.expander(label):
-                    st.write(f"Score: {r.get('score', 0):.4f}")
-                    st.write(r.get("text", ""))
+    results = data.get("results", [])
+    if results:
+        with st.expander("Sources"):
+            for i, r in enumerate(results, start=1):
+                c = r.get("citation", {}) or {}
+                st.markdown(
+                    f"**{i}. {c.get('title', '(no title)')}**  \n"
+                    f"- path: `{c.get('source_path', '')}`  \n"
+                    f"- department: `{c.get('department', '')}`, access: `{c.get('access_level', '')}`  \n"
+                    f"- chunk_id: `{r.get('chunk_id', '')}`, score: `{r.get('score', 0):.4f}`"
+                )
+                text = r.get("text", "")
+                st.caption(text[:300] + ("..." if len(text) > 300 else ""))
+                st.divider()
+    else:
+        st.caption("No sources returned.")
+
 
     # store assistant message in history
     st.session_state.messages.append({"role": "assistant", "content": answer})
