@@ -41,7 +41,7 @@ services:
       dockerfile: apps/api/Dockerfile
     environment:
       DATABASE_URL: postgresql+psycopg://rag:ragpass@db:5432/rag_kb
-      JWT_SECRET: "change-me-in-prod"
+      JWT_SECRET: "wake-up-f1lthy"
       OLLAMA_URL: "http://ollama:11434"
       OLLAMA_MODEL: "llama3.1:8b"
       USE_LLM: "true"

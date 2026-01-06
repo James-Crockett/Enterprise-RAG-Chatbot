@@ -5,8 +5,8 @@ import os
 DEFAULT_API = os.getenv("API_URL", "http://127.0.0.1:8000")
 API_URL = st.sidebar.text_input("API URL", DEFAULT_API).rstrip("/")
 
-st.title("Enterprise KB Chatbot (Centralized, pgvector)")
-st.caption("Login + permission-aware retrieval backed by Postgres (pgvector)")
+st.title("Enterprise KB Chatbot")
+st.caption("Permission-aware retrieval backed by Postgres (pgvector)")
 
 # -----------------------
 # Auth (JWT) in sidebar

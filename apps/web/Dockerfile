@@ -7,7 +7,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends curl \
 
 RUN pip install --no-cache-dir uv
 
-ENV UV_PYTHON_DOWNLOADS="auto"
+ENV UV_PYTHON_DOWNLOADS=never
 ENV UV_PROJECT_ENVIRONMENT=/app/.venv
 
 COPY pyproject.toml uv.lock* /app/
