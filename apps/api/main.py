@@ -4,6 +4,7 @@ from typing import Any, Dict, Optional, List
 from uuid import UUID
 
 from fastapi import FastAPI, Depends, HTTPException
+from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from sqlmodel import Session, select
 from sqlalchemy import text as sql_text
@@ -14,6 +15,7 @@ from apps.api.core.security import verify_password, create_access_token
 from apps.api.core.deps import get_current_user
 from apps.api.models import User
 
+from rag.generation.ollama_client import ollama_generate
 
 app = FastAPI(title="RAG Enterprise KB (pgvector)", version="0.2.0")
 
@@ -21,6 +23,18 @@ app = FastAPI(title="RAG Enterprise KB (pgvector)", version="0.2.0")
 EMBED_MODEL = "sentence-transformers/all-MiniLM-L6-v2"
 embedder = SentenceTransformer(EMBED_MODEL)
 
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=[
+        "http://localhost:8501",
+        "http://127.0.0.1:8501",
+        "http://localhost:8000",
+        "http://127.0.0.1:8000",
+    ],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 # ---------- Schemas ----------
 class LoginRequest(BaseModel):
@@ -33,11 +47,16 @@ class LoginResponse(BaseModel):
     token_type: str = "bearer"
 
 
+# class ChatRequest(BaseModel):
+#     query: str
+#     top_k: int = 5
+#     filters: Optional[Dict[str, Any]] = None  # stored in chunks.metadata JSON
+
 class ChatRequest(BaseModel):
     query: str
     top_k: int = 5
-    filters: Optional[Dict[str, Any]] = None  # stored in chunks.metadata JSON
-
+    filters: Optional[Dict[str, Any]] = None
+    mode: str = "citations_only"
 
 class Citation(BaseModel):
     source_path: Optional[str] = None
@@ -47,9 +66,17 @@ class Citation(BaseModel):
     access_level: Optional[int] = None
 
 
+# class ChunkOut(BaseModel):
+#     chunk_id: int
+#     score: float
+#     text: str
+#     citation: Citation
+
 class ChunkOut(BaseModel):
     chunk_id: int
     score: float
+    vector_score: float = 0.0
+    keyword_score: float = 0.0
     text: str
     citation: Citation
 
@@ -74,6 +101,24 @@ def citations_only_answer(query: str, chunks: List[str]) -> str:
     # crude sentence split
     parts = text.split(". ")
     return ". ".join(parts[:2]).strip() + ("." if len(parts) > 0 and not text.endswith(".") else "")
+
+def build_rag_prompt(question: str, retrieved: List[ChunkOut]) -> str:
+    ctx = "\n\n".join(
+        f"[{c.citation.source_path or 'unknown'}]\n{c.text}"
+        for c in retrieved[:5]
+    )
+    return f"""You are a company knowledge base assistant.
+Use ONLY the context below. If the answer isn't in the context, say you couldn't find it.
+Cite sources like (source_path).
+
+Question: {question}
+
+Context:
+{ctx}
+
+Answer:
+"""
+
 
 
 # ---------- Routes ----------
@@ -132,7 +177,7 @@ def chat(
     WITH q AS (
     SELECT
         CAST(:qvec AS vector) AS qvec,
-        plainto_tsquery('english', :qtext) AS tsq
+        plainto_tsquery('simple', :qtext) AS tsq
     )
     SELECT
     c.id,
@@ -140,7 +185,7 @@ def chat(
     c.metadata AS meta,
     c.access_level,
     (1 - (c.embedding <=> q.qvec)) AS vscore,
-    ts_rank_cd(to_tsvector('english', c.text), q.tsq) AS tscore,
+    ts_rank_cd(to_tsvector('simple', c.text), q.tsq) AS tscore,
     ((1 - (c.embedding <=> q.qvec)) + (:alpha * ts_rank_cd(to_tsvector('english', c.text), q.tsq))) AS score
     FROM chunks c, q
     WHERE {where_sql}
@@ -171,20 +216,49 @@ def chat(
         chunk_texts.append(r.text)
 
         citation = Citation(
-            source_path=meta.get("source_path"),
-            title=meta.get("title"),
-            department=meta.get("department"),
-            page=meta.get("page"),
-            access_level=int(r.access_level),
+        source_path=meta.get("source_path"),
+        title=meta.get("title"),
+        department=meta.get("department"),
+        page=meta.get("page"),
+        access_level=int(r.access_level),
         )
-        results.append({
-        "chunk_id": r.id,
-        "score": float(r.score),
-        "vector_score": float(r.vscore),
-        "keyword_score": float(r.tscore),
-        "text": r.text,
-        "citation": meta,
-    })
+
+        results.append(
+            ChunkOut(
+                chunk_id=int(r.id),
+                score=float(r.score),
+                vector_score=float(r.vscore),
+                keyword_score=float(r.tscore),
+                text=r.text,
+                citation=citation,
+            )
+        )
+
+    if req.mode == "rag_generate":
+        prompt = build_rag_prompt(req.query, results)
+        answer = ollama_generate(prompt)
+        mode = "rag_generate"
+    else:
+        answer = citations_only_answer(req.query, chunk_texts)
+        mode = "citations_only"
+
+    return ChatResponse(query=req.query, answer=answer, mode=mode, results=results)
+
+    #     citation = Citation(
+    #         source_path=meta.get("source_path"),
+    #         title=meta.get("title"),
+    #         department=meta.get("department"),
+    #         page=meta.get("page"),
+    #         access_level=int(r.access_level),
+    #     )
+    #     results.append({
+    #     "chunk_id": r.id,
+    #     "score": float(r.score),
+    #     "vector_score": float(r.vscore),
+    #     "keyword_score": float(r.tscore),
+    #     "text": r.text,
+    #     "citation": meta,
+    # })
 
         # results.append(
         #     ChunkOut(

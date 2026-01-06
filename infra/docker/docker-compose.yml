@@ -42,11 +42,15 @@ services:
     environment:
       DATABASE_URL: postgresql+psycopg://rag:ragpass@db:5432/rag_kb
       JWT_SECRET: "change-me-in-prod"
+      OLLAMA_URL: http://ollama:11434
+      OLLAMA_MODEL: phi3:mini
     depends_on:
       db:
         condition: service_healthy
     expose:
       - "8000"
+    ports: 
+      - "8000:8000"
     volumes:
       - ../../data:/app/data  # so uploads/docs persist
 
@@ -61,5 +65,18 @@ services:
     ports:
       - "8501:8501"
 
+  ollama:
+      image: ollama/ollama:latest
+      container_name: rag_ollama
+      volumes:
+        - ollama:/root/.ollama
+      expose:
+        - "11434"
+      # Optional: if you want to pull models from your host for testing:
+      # ports:
+      #   - "11434:11434"
+  
+
 volumes:
   pgdata:
+  ollama:
