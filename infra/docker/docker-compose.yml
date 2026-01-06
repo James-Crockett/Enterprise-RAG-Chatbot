@@ -44,6 +44,7 @@ services:
       JWT_SECRET: "change-me-in-prod"
       OLLAMA_URL: "http://ollama:11434"
       OLLAMA_MODEL: "llama3.1:8b"
+      USE_LLM: "true"
       OLLAMA_TIMEOUT_S: "90"
     depends_on:
       db:

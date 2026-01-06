@@ -18,8 +18,13 @@ from apps.api.models import User
 from rag.generation.ollama_client import ollama_generate
 import os
 import json
+
+import urllib.request as urlrequest
 from urllib.request import Request, urlopen
 from urllib.error import URLError, HTTPError
+
+from pydantic import BaseModel
+from typing import Optional, Dict, Any, List
 
 app = FastAPI(title="RAG Enterprise KB (pgvector)", version="0.2.0")
 
@@ -29,19 +34,17 @@ embedder = SentenceTransformer(EMBED_MODEL)
 
 OLLAMA_URL = os.getenv("OLLAMA_URL", "http://ollama:11434").rstrip("/")
 OLLAMA_MODEL = os.getenv("OLLAMA_MODEL", "llama3.1:8b")
+USE_LLM = os.getenv("USE_LLM", "false").lower() in ("1", "true", "yes")
 OLLAMA_TIMEOUT_S = float(os.getenv("OLLAMA_TIMEOUT_S", "60"))
+
+cors_origins = [o.strip() for o in os.getenv("CORS_ORIGINS", "http://localhost:8501").split(",") if o.strip()]
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[
-        "http://localhost:8501",
-        "http://127.0.0.1:8501",
-        "http://localhost:8000",
-        "http://127.0.0.1:8000",
-    ],
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
+    allow_origins=cors_origins,
+    allow_credentials=False,  # using Authorization: Bearer, not cookies
+    allow_methods=["POST", "GET"],
+    allow_headers=["Authorization", "Content-Type"],
 )
 
 # ---------- Schemas ----------
@@ -67,28 +70,18 @@ class ChatRequest(BaseModel):
     filters: Optional[Dict[str, Any]] = None  # stored in chunks.metadata JSON
     mode: str = "rag"  # "rag" or "citations_only"
 
-class Citation(BaseModel):
-    source_path: Optional[str] = None
-    title: Optional[str] = None
-    department: Optional[str] = None
-    page: Optional[int] = None
-    access_level: Optional[int] = None
-
-
-# class ChunkOut(BaseModel):
-#     chunk_id: int
-#     score: float
-#     text: str
-#     citation: Citation
+class CitationOut(BaseModel):
+    document_id: int
+    title: str
+    source_path: str
+    department: str
+    access_level: int
 
 class ChunkOut(BaseModel):
     chunk_id: int
-    score: float
-    vector_score: float = 0.0
-    keyword_score: float = 0.0
     text: str
-    citation: Citation
-
+    score: float
+    citation: CitationOut
 
 class ChatResponse(BaseModel):
     query: str
@@ -163,6 +156,53 @@ def build_context(results, max_chars: int = 12000) -> str:
     return "\n---\n".join(parts)
 
 
+# def ollama_answer(query: str, chunks: list[dict]) -> str:
+    """
+    chunks: list of dicts like:
+      {"chunk_id": 9, "text": "...", "title": "...", "source_path": "..."}
+    """
+    if not OLLAMA_URL or not USE_LLM:
+        return ""
+
+    # Put chunk ids in the context so the model can cite them.
+    context = "\n\n".join(
+        f"[chunk:{c['chunk_id']}] ({c.get('title','')}) {c['text']}"
+        for c in chunks
+    )
+
+    system = (
+        "You are a company knowledge base assistant.\n"
+        "Use ONLY the provided context.\n"
+        "If the answer is not in the context, say you don't know.\n"
+        "Cite sources inline using the format [chunk:ID].\n"
+        "Do NOT reveal secrets/codes unless explicitly present in context AND allowed.\n"
+        "Be concise."
+    )
+
+    payload = {
+        "model": OLLAMA_MODEL,
+        "messages": [
+            {"role": "system", "content": system},
+            {"role": "user", "content": f"Question: {query}\n\nContext:\n{context}"},
+        ],
+        "stream": False,
+        "options": {"temperature": 0.2},
+    }
+
+    req = urlrequest.Request(
+        f"{OLLAMA_URL}/api/chat",
+        data=json.dumps(payload).encode("utf-8"),
+        headers={"Content-Type": "application/json"},
+        method="POST",
+    )
+
+    try:
+        with urlrequest.urlopen(req, timeout=90) as resp:
+            data = json.loads(resp.read().decode("utf-8"))
+        return (data.get("message", {}).get("content") or "").strip()
+    except (HTTPError, URLError, TimeoutError, json.JSONDecodeError):
+        return ""
+    
 
 def ollama_chat(messages: List[dict]) -> str:
     """
@@ -254,7 +294,10 @@ def chat(
     # 2) Build SQL:
     #    - enforce permission: chunks.access_level <= user.max_access_level
     #    - optional JSON metadata filters
-    where_clauses = ["access_level <= :max_level"]
+    where_clauses = [
+    "c.access_level <= :max_level",
+    "d.access_level <= :max_level",]
+
     alpha = 0.15  # keyword boost strength (tune 0.05–0.3)
     params = {
         "qvec": qvec,
@@ -267,116 +310,86 @@ def chat(
     # params = {"qvec": qvec, "k": req.top_k, "max_level": user.max_access_level}
 
 
+    ALLOWED_FILTER_KEYS = {"department", "source_path", "doc_type"}  # expand as you add metadata
+
     if req.filters:
-        for key, val in req.filters.items():
-            where_clauses.append(f"(metadata->>:k_{key}) = :v_{key}")
-            params[f"k_{key}"] = key
-            params[f"v_{key}"] = str(val)
+        for i, (key, val) in enumerate(req.filters.items()):
+            if key not in ALLOWED_FILTER_KEYS:
+                raise HTTPException(status_code=400, detail=f"Unsupported filter key: {key}")
+
+            # Bind the JSON key name and value safely (no f-string using user input)
+            where_clauses.append(f"(c.metadata ->> :k{i}) = :v{i}")
+            params[f"k{i}"] = key
+            params[f"v{i}"] = str(val)
 
     where_sql = " AND ".join(where_clauses)
 
     stmt = sql_text(f"""
-    WITH q AS (
     SELECT
-        CAST(:qvec AS vector) AS qvec,
-        plainto_tsquery('simple', :qtext) AS tsq
-    )
-    SELECT
-    c.id,
-    c.text,
-    c.metadata AS meta,
-    c.access_level,
-    (1 - (c.embedding <=> q.qvec)) AS vscore,
-    ts_rank_cd(to_tsvector('simple', c.text), q.tsq) AS tscore,
-    ((1 - (c.embedding <=> q.qvec)) + (:alpha * ts_rank_cd(to_tsvector('english', c.text), q.tsq))) AS score
-    FROM chunks c, q
+    c.id AS chunk_id,
+    c.text AS text,
+    c.access_level AS access_level,
+    d.id AS document_id,
+    d.title AS title,
+    d.source_path AS source_path,
+    d.department AS department,
+    d.access_level AS doc_access_level,
+    (1 - (c.embedding <=> CAST(:qvec AS vector))) AS score
+    FROM chunks c
+    JOIN documents d ON d.id = c.document_id
     WHERE {where_sql}
-    ORDER BY score DESC
+    ORDER BY c.embedding <=> CAST(:qvec AS vector)
     LIMIT :k
     """)
-
-    # stmt = sql_text(f"""
-    # SELECT
-    # id,
-    # text,
-    # metadata AS meta,
-    # access_level,
-    # (1 - (embedding <=> CAST(:qvec AS vector))) AS score
-    # FROM chunks
-    # WHERE {where_sql}
-    # ORDER BY embedding <=> CAST(:qvec AS vector)
-    # LIMIT :k
-    # """)
 
     rows = session.execute(stmt, params).all()
 
     results: List[ChunkOut] = []
-    chunk_texts: List[str] = []
-
     for r in rows:
-        meta = r.meta or {}
-        chunk_texts.append(r.text)
+        # r is a Row; access via attributes or _mapping
+        m = r._mapping
 
-        citation = Citation(
-        source_path=meta.get("source_path"),
-        title=meta.get("title"),
-        department=meta.get("department"),
-        page=meta.get("page"),
-        access_level=int(r.access_level),
+        citation = CitationOut(
+            document_id=int(m["document_id"]),
+            title=str(m["title"]),
+            source_path=str(m["source_path"]),
+            department=str(m["department"]),
+            access_level=int(m["doc_access_level"]),
         )
 
         results.append(
             ChunkOut(
-                chunk_id=int(r.id),
-                score=float(r.score),
-                vector_score=float(r.vscore),
-                keyword_score=float(r.tscore),
-                text=r.text,
+                chunk_id=int(m["chunk_id"]),
+                text=str(m["text"]),
+                score=float(m["score"]),
                 citation=citation,
             )
         )
+
+    # Build a minimal chunk list for the LLM
+    llm_chunks = [
+    {
+        "chunk_id": r.chunk_id,
+        "text": r.text,
+        "title": r.citation.title,
+        "source_path": r.citation.source_path,
+    }
+    for r in results
+    ]
+
+    chunk_texts = [r.text for r in results]
 
     if req.mode == "citations_only":
         answer = citations_only_answer(req.query, chunk_texts)
         mode = "citations_only"
     else:
         try:
-            answer = rag_answer(req.query, results)
+            answer = rag_answer(req.query, results)  # this calls ollama_chat()
             mode = "rag"
         except Exception as e:
-            # If Ollama is down/unreachable, fall back to citations_only
             answer = citations_only_answer(req.query, chunk_texts) + f"\n\n(LLM fallback: {e})"
             mode = "citations_only"
 
     return ChatResponse(query=req.query, answer=answer, mode=mode, results=results)
 
-
-    #     citation = Citation(
-    #         source_path=meta.get("source_path"),
-    #         title=meta.get("title"),
-    #         department=meta.get("department"),
-    #         page=meta.get("page"),
-    #         access_level=int(r.access_level),
-    #     )
-    #     results.append({
-    #     "chunk_id": r.id,
-    #     "score": float(r.score),
-    #     "vector_score": float(r.vscore),
-    #     "keyword_score": float(r.tscore),
-    #     "text": r.text,
-    #     "citation": meta,
-    # })
-
-        # results.append(
-        #     ChunkOut(
-        #         chunk_id=int(r.id),
-        #         score=float(r.score),
-        #         text=r.text,
-        #         citation=citation,
-        #     )
-        # )
-
-    # answer = citations_only_answer(req.query, chunk_texts)
-
-    # return ChatResponse(query=req.query, answer=answer, mode="citations_only", results=results)
    
