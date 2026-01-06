@@ -16,12 +16,20 @@ from apps.api.core.deps import get_current_user
 from apps.api.models import User
 
 from rag.generation.ollama_client import ollama_generate
+import os
+import json
+from urllib.request import Request, urlopen
+from urllib.error import URLError, HTTPError
 
 app = FastAPI(title="RAG Enterprise KB (pgvector)", version="0.2.0")
 
 # Embedder is loaded once (fast for repeated queries)
 EMBED_MODEL = "sentence-transformers/all-MiniLM-L6-v2"
 embedder = SentenceTransformer(EMBED_MODEL)
+
+OLLAMA_URL = os.getenv("OLLAMA_URL", "http://ollama:11434").rstrip("/")
+OLLAMA_MODEL = os.getenv("OLLAMA_MODEL", "llama3.1:8b")
+OLLAMA_TIMEOUT_S = float(os.getenv("OLLAMA_TIMEOUT_S", "60"))
 
 app.add_middleware(
     CORSMiddleware,
@@ -50,13 +58,14 @@ class LoginResponse(BaseModel):
 # class ChatRequest(BaseModel):
 #     query: str
 #     top_k: int = 5
-#     filters: Optional[Dict[str, Any]] = None  # stored in chunks.metadata JSON
+#     filters: Optional[Dict[str, Any]] = None
+#     mode: str = "citations_only"
 
 class ChatRequest(BaseModel):
     query: str
     top_k: int = 5
-    filters: Optional[Dict[str, Any]] = None
-    mode: str = "citations_only"
+    filters: Optional[Dict[str, Any]] = None  # stored in chunks.metadata JSON
+    mode: str = "rag"  # "rag" or "citations_only"
 
 class Citation(BaseModel):
     source_path: Optional[str] = None
@@ -118,7 +127,100 @@ Context:
 
 Answer:
 """
+def _val(obj, key, default=None):
+    # Works for dict-like and object-like results
+    if isinstance(obj, dict):
+        return obj.get(key, default)
+    return getattr(obj, key, default)
 
+def build_context(results, max_chars: int = 12000) -> str:
+    parts = []
+    used = 0
+
+    for r in results:
+        meta = _val(r, "citation", {}) or {}
+        if not isinstance(meta, dict):
+            # if citation is a model, convert to dict if possible
+            meta = meta.model_dump() if hasattr(meta, "model_dump") else dict(meta)
+
+        header = (
+            f"[chunk:{_val(r,'chunk_id')}] "
+            f"title={meta.get('title')} "
+            f"dept={meta.get('department')} "
+            f"access={meta.get('access_level')} "
+            f"path={meta.get('source_path')}"
+        )
+
+        body = (_val(r, "text", "") or "").strip()
+        block = header + "\n" + body + "\n"
+
+        if used + len(block) > max_chars:
+            break
+
+        parts.append(block)
+        used += len(block)
+
+    return "\n---\n".join(parts)
+
+
+
+def ollama_chat(messages: List[dict]) -> str:
+    """
+    Calls Ollama's /api/chat endpoint and returns the assistant text.
+
+    We set temperature low for enterprise Q&A (more factual, less creative).
+    """
+    payload = {
+        "model": OLLAMA_MODEL,
+        "messages": messages,
+        "stream": False,
+        "options": {"temperature": 0.2},
+    }
+
+    req = Request(
+        url=f"{OLLAMA_URL}/api/chat",
+        data=json.dumps(payload).encode("utf-8"),
+        headers={"Content-Type": "application/json"},
+        method="POST",
+    )
+
+    try:
+        with urlopen(req, timeout=OLLAMA_TIMEOUT_S) as resp:
+            data = json.loads(resp.read().decode("utf-8"))
+            return (data.get("message") or {}).get("content", "").strip()
+    except HTTPError as e:
+        raise RuntimeError(f"Ollama HTTPError {e.code}: {e.read().decode('utf-8', errors='ignore')}")
+    except URLError as e:
+        raise RuntimeError(f"Ollama URLError: {e}")
+
+
+def rag_answer(query: str, results: List[dict]) -> str:
+    """
+    RAG = Retrieval + Generation.
+
+    We give the model the retrieved context and require:
+    - answer ONLY from context
+    - if not enough info, say so
+    - cite chunk ids like [chunk:123]
+    """
+    context = build_context(results)
+
+    system = (
+        "You are an enterprise knowledge base assistant.\n"
+        "Answer using ONLY the provided CONTEXT.\n"
+        "If the answer is not in the context, say you don't know based on the KB.\n"
+        "Keep answers concise and actionable.\n"
+        "When you use a fact, cite it with [chunk:<id>] at the end of the sentence.\n"
+    )
+
+    user = f"QUESTION:\n{query}\n\nCONTEXT:\n{context}"
+
+    return ollama_chat(
+        [
+            {"role": "system", "content": system},
+            {"role": "user", "content": user},
+        ]
+    )
 
 
 # ---------- Routes ----------
@@ -234,15 +336,20 @@ def chat(
             )
         )
 
-    if req.mode == "rag_generate":
-        prompt = build_rag_prompt(req.query, results)
-        answer = ollama_generate(prompt)
-        mode = "rag_generate"
-    else:
+    if req.mode == "citations_only":
         answer = citations_only_answer(req.query, chunk_texts)
         mode = "citations_only"
+    else:
+        try:
+            answer = rag_answer(req.query, results)
+            mode = "rag"
+        except Exception as e:
+            # If Ollama is down/unreachable, fall back to citations_only
+            answer = citations_only_answer(req.query, chunk_texts) + f"\n\n(LLM fallback: {e})"
+            mode = "citations_only"
 
     return ChatResponse(query=req.query, answer=answer, mode=mode, results=results)
+
 
     #     citation = Citation(
     #         source_path=meta.get("source_path"),
@@ -269,6 +376,7 @@ def chat(
         #     )
         # )
 
-    answer = citations_only_answer(req.query, chunk_texts)
+    # answer = citations_only_answer(req.query, chunk_texts)
 
-    return ChatResponse(query=req.query, answer=answer, mode="citations_only", results=results)
+    # return ChatResponse(query=req.query, answer=answer, mode="citations_only", results=results)
+   
