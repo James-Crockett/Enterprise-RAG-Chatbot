@@ -2,7 +2,7 @@
 
 A **permission-aware Retrieval-Augmented Generation (RAG)** chatbot for querying a company-style knowledge base (policies, IT runbooks, onboarding docs, FAQs). The system combines **vector retrieval (pgvector)** with a **local LLM (Ollama)** to generate concise, context-aware answers **grounded in retrieved sources** and **filtered by user permissions**.
 
-**Flow**: end-to-end ingestion → embeddings → vector search → authenticated chat API → LLM answer generation → UI, with a containerized workflow for repeatable runs.
+**Flow**: End-to-end ingestion → embeddings → vector search → authenticated chat API → LLM answer generation → UI, with a containerized workflow for repeatable runs.
 
 ---
 
@@ -23,7 +23,7 @@ This project solves that by:
 ---
 ## Demo
 
-<video src="C:\Users\nithe\Documents\projects\rag-enterprise-kb\demo\demo.mp4" width="300" controls></video>
+https://github.com/user-attachments/assets/1f702c94-e722-4c36-aaae-e058598ce2d8
 
 ---
 
