@@ -2,13 +2,15 @@
 
 A **permission-aware Retrieval-Augmented Generation (RAG)** chatbot for querying a company-style knowledge base (policies, IT runbooks, onboarding docs, FAQs). The system combines **vector retrieval (pgvector)** with a **local LLM (Ollama)** to generate concise, context-aware answers **grounded in retrieved sources** and **filtered by user permissions**.
 
-This repo is designed to be **resume-worthy**: end-to-end ingestion → embeddings → vector search → authenticated chat API → LLM answer generation → UI, with a containerized workflow for repeatable runs.
+**Flow**: end-to-end ingestion → embeddings → vector search → authenticated chat API → LLM answer generation → UI, with a containerized workflow for repeatable runs.
 
 ---
 
 ## Why this project exists
 
-In many companies, institutional knowledge is scattered across wikis, docs, PDFs, and internal portals. Employees waste time searching and asking around, and restricted information must remain protected.
+In my previous internship, I noticed that we were handling our sensitive internal documentation/materials in an unsafe way that it may get compromised. So, I researched how small scale companies handle their data and I found out that majority of them were handling their data similarly. So, this is my attempt for the problem.
+
+In many companies, institutional knowledge is scattered across wikis, docs, PDFs, and internal portals. A lot of employees waste time searching and asking around, and restricted information must remain protected.
 
 This project solves that by:
 - indexing internal documents into a vector database,
@@ -16,7 +18,7 @@ This project solves that by:
 - using an LLM to synthesize a grounded answer,
 - enforcing **access controls at retrieval time** so restricted content never reaches the LLM for unauthorized users.
 
-> **Core idea:** RAG + permissions = useful *and* safe enterprise search.
+> This project prioritizes the RAG pipeline and security logic; it is fully containerized to support flexible deployment across various server infrastructures.
 
 ---
 
@@ -61,7 +63,7 @@ Docker Compose stack with:
                     ┌──────────────────────────┐
                     │        Streamlit UI      │
                     │  - Login (JWT)           │
-User ─────────────► │  - Chat + Sources        │
+User ──[Server]───► │  - Chat + Sources        │
                     └───────────┬──────────────┘
                                 │ HTTP
                                 ▼
