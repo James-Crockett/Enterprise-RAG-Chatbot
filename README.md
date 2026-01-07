@@ -21,6 +21,11 @@ This project solves that by:
 > This project prioritizes the RAG pipeline and security logic; it is fully containerized to support flexible deployment across various server infrastructures.
 
 ---
+## Demo
+
+<video src="C:\Users\nithe\Documents\projects\rag-enterprise-kb\demo\demo.mp4" width="300" controls></video>
+
+---
 
 ## Key features
 
@@ -119,7 +124,7 @@ rag-enterprise-kb/
 
 ---
 
-## Quickstart (recommended): Docker Compose
+## Quickstart: Docker Compose
 
 ### 1) Prerequisites
 - Docker + Docker Compose
