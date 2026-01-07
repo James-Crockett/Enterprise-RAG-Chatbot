@@ -23,7 +23,7 @@ This project solves that by:
 ---
 ## Demo
 
-<video src="C:\Users\nithe\Documents\projects\rag-enterprise-kb\demo\demo.mp4" width="300" controls></video>
+<video src="\demo\demo.mp4" width="300" controls></video>
 
 ---
 
