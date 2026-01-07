@@ -23,8 +23,7 @@ This project solves that by:
 ---
 ## Demo
 
-<video src="\demo\demo.mp4" width="300" controls></video>
-
+<video src="https://github.com/James-Crockett/resume/raw/main/demo/demo.mp4" width="300" controls></video>
 ---
 
 ## Key features
