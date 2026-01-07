@@ -279,14 +279,3 @@ docker compose -f infra/docker/docker-compose.yml exec ollama ollama pull llama3
 Run the schema init command shown in Quickstart step 4.
 
 ---
-
-## Roadmap / next upgrades
-- Admin panel for uploading documents + triggering ingestion
-- Chunking improvements (headings-aware Markdown, PDF parsing)
-- Hybrid retrieval (BM25 + vector) and reranking
-- Offline evaluation harness (retrieval precision/recall + LLM answer scoring)
-- Audit logs for access + queries (enterprise monitoring)
-
----
-
-
