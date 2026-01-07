@@ -23,7 +23,7 @@ This project solves that by:
 ---
 ## Demo
 
-https://github.com/user-attachments/assets/1f702c94-e722-4c36-aaae-e058598ce2d8
+https://github.com/user-attachments/assets/b3f1e7be-1ea6-4e86-b7ba-b570bd4b4a0f
 
 ---
 
