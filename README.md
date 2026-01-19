@@ -1,6 +1,6 @@
 # RAG-Powered Enterprise Knowledge Base (KB) Chatbot
 
-A **permission-aware Retrieval-Augmented Generation (RAG)** chatbot for querying a company-style knowledge base (policies, IT runbooks, onboarding docs, FAQs). The system combines **vector retrieval (pgvector)** with a **local LLM (Ollama)** to generate concise, context-aware answers **grounded in retrieved sources** and **filtered by user permissions**.
+A permission-aware Retrieval-Augmented Generation (RAG) chatbot for querying a company-style knowledge base (policies, IT runbooks, onboarding docs, FAQs). The system combines vector retrieval (pgvector) with a local LLM (Ollama) to generate concise, context-aware answers grounded in retrieved sources and filtered by user permissions.
 
 **Flow**: End-to-end ingestion → embeddings → vector search → authenticated chat API → LLM answer generation → UI, with a containerized workflow for repeatable runs.
 > Note: I have not audited the code for security vulnerabilities. Please review further if you want to deploy in a production environment.
@@ -8,9 +8,11 @@ A **permission-aware Retrieval-Augmented Generation (RAG)** chatbot for querying
 
 ## Why this project exists
 
-In my previous internship, I noticed that we were handling our sensitive internal documentation/materials in an unsafe way that it may get compromised. So, I researched how small scale companies handle their data and I found out that majority of them were handling their data similarly. So, this is my attempt for the problem.
+In my previous internship, I noticed that we were handling our sensitive internal documentation/materials in an unsafe way that it may get compromised. For instance, files were often stored in consumer-grade cloud services like personal Google Drive accounts without enabling two-factor authentication (2FA), leading to risks of account compromises via phishing attacks. So, I researched how small scale companies handle their data and I found out that majority of them were handling their data similarly.
 
-In many companies, institutional knowledge is scattered across wikis, docs, PDFs, and internal portals. A lot of employees waste time searching and asking around, and restricted information must remain protected.
+**While this solution is by no means the most optimal or secure approach, it represents my initial attempt to address the problem and captures the essence of my concept.**
+
+In addition to security, in many companies, institutional knowledge is scattered across wikis, docs, PDFs, and internal portals. A lot of employees waste time searching and asking around, and restricted information must remain protected.
 
 This project solves that by:
 - indexing internal documents into a vector database,
