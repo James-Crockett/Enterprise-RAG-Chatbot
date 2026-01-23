@@ -1,16 +1,18 @@
 # RAG-Powered Enterprise Knowledge Base (KB) Chatbot
 
-A **permission-aware Retrieval-Augmented Generation (RAG)** chatbot for querying a company-style knowledge base (policies, IT runbooks, onboarding docs, FAQs). The system combines **vector retrieval (pgvector)** with a **local LLM (Ollama)** to generate concise, context-aware answers **grounded in retrieved sources** and **filtered by user permissions**.
+A permission-aware Retrieval-Augmented Generation (RAG) chatbot for querying a company-style knowledge base (policies, IT runbooks, onboarding docs, FAQs). The system combines vector retrieval (pgvector) with a local LLM (Ollama) to generate concise, context-aware answers grounded in retrieved sources and filtered by user permissions.
 
-**Flow**: end-to-end ingestion → embeddings → vector search → authenticated chat API → LLM answer generation → UI, with a containerized workflow for repeatable runs.
-
+**Flow**: End-to-end ingestion → embeddings → vector search → authenticated chat API → LLM answer generation → UI, with a containerized workflow for repeatable runs.
+> Note: I have not audited the code for security vulnerabilities. Please review further if you want to deploy in a production environment.
 ---
 
 ## Why this project exists
 
-In my previous internship, I noticed that we were handling our sensitive internal documentation/materials in an unsafe way that it may get compromised. So, I researched how small scale companies handle their data and I found out that majority of them were handling their data similarly. So, this is my attempt for the problem.
+In my previous internship, I noticed that we were handling our sensitive internal documentation/materials in an unsafe way that it may get compromised. For instance, files were often stored in consumer-grade cloud services like personal Google Drive accounts without enabling two-factor authentication (2FA), leading to risks of account compromises via phishing attacks. So, I researched how small scale companies handle their data and I found out that majority of them were handling their data similarly.
 
-In many companies, institutional knowledge is scattered across wikis, docs, PDFs, and internal portals. A lot of employees waste time searching and asking around, and restricted information must remain protected.
+**While this solution is by no means the most optimal or secure approach, it represents my initial attempt to address the problem and captures the essence of my concept.**
+
+In addition to security, in many companies, institutional knowledge is scattered across wikis, docs, PDFs, and internal portals. A lot of employees waste time searching and asking around, and restricted information must remain protected.
 
 This project solves that by:
 - indexing internal documents into a vector database,
@@ -19,6 +21,11 @@ This project solves that by:
 - enforcing **access controls at retrieval time** so restricted content never reaches the LLM for unauthorized users.
 
 > This project prioritizes the RAG pipeline and security logic; it is fully containerized to support flexible deployment across various server infrastructures.
+
+---
+## Demo
+
+https://github.com/user-attachments/assets/b3f1e7be-1ea6-4e86-b7ba-b570bd4b4a0f
 
 ---
 
@@ -119,7 +126,7 @@ rag-enterprise-kb/
 
 ---
 
-## Quickstart (recommended): Docker Compose
+## Quickstart: Docker Compose
 
 ### 1) Prerequisites
 - Docker + Docker Compose
@@ -279,14 +286,3 @@ docker compose -f infra/docker/docker-compose.yml exec ollama ollama pull llama3
 Run the schema init command shown in Quickstart step 4.
 
 ---
-
-## Roadmap / next upgrades
-- Admin panel for uploading documents + triggering ingestion
-- Chunking improvements (headings-aware Markdown, PDF parsing)
-- Hybrid retrieval (BM25 + vector) and reranking
-- Offline evaluation harness (retrieval precision/recall + LLM answer scoring)
-- Audit logs for access + queries (enterprise monitoring)
-
----
-
-
