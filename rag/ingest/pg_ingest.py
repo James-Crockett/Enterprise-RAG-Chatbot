@@ -57,13 +57,13 @@ def main():
     if not input_dir.exists():
         raise SystemExit(f"Input dir not found: {input_dir.resolve()}")
 
-    # 1) Load docs (MD/TXT/PDF)
+    # Load docs (MD/TXT/PDF)
     loaded_docs: List[LoadedDocument] = load_documents(input_dir)
     if not loaded_docs:
         raise SystemExit(f"No documents found in {input_dir.resolve()}")
 
-    # 2) Build chunks with metadata
-    # We'll store key citation fields in Chunk.meta so /chat can display them.
+    # Build chunks with metadata
+    # store key citation fields in Chunk.meta so /chat can display them.
     chunk_rows: List[Dict[str, Any]] = []
     document_rows: List[Document] = []
 
@@ -104,7 +104,7 @@ def main():
                 }
             )
 
-    # 3) Embed all chunk texts (batch)
+    # Embed all chunk texts (batch)
     embedder = SentenceTransformer(args.model)
     texts = [r["text"] for r in chunk_rows]
     embs = embedder.encode(texts, normalize_embeddings=True, batch_size=32, show_progress_bar=True)
@@ -113,7 +113,7 @@ def main():
     if embs.shape[1] != 384:
         raise SystemExit(f"Unexpected embedding dim {embs.shape[1]} (expected 384). Are you using MiniLM?")
 
-    # 4) Insert into Postgres
+    # Insert into Postgres
     with Session(engine) as session:
         if args.reset:
             reset_tables(session)

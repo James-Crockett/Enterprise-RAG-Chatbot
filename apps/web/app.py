@@ -48,7 +48,7 @@ if not st.session_state.token:
 st.sidebar.subheader("Retrieval settings")
 top_k = st.sidebar.slider("Top-K sources", 1, 10, 5)
 
-# Simple optional filters (these match JSON metadata keys your ingest stores)
+# Simple optional filters (these match JSON metadata keys in ingest stores)
 dept = st.sidebar.selectbox(
     "Department filter (optional)",
     ["(none)", "general", "hr", "it", "engineering", "research", "finance", "security"],

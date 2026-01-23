@@ -287,11 +287,11 @@ def chat(
     session: Session = Depends(get_session),
     user: User = Depends(get_current_user),
 ):
-    # 1) Embed the query (normalize for cosine)
+    # Embed the query (normalize for cosine)
     qvec_list = embedder.encode([req.query], normalize_embeddings=True)[0].tolist()
     qvec = "[" + ",".join(str(x) for x in qvec_list) + "]"
 
-    # 2) Build SQL:
+    # Build SQL:
     #    - enforce permission: chunks.access_level <= user.max_access_level
     #    - optional JSON metadata filters
     where_clauses = [
