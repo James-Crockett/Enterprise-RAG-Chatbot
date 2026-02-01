@@ -8,7 +8,7 @@ A permission-aware Retrieval-Augmented Generation (RAG) chatbot for querying a c
 
 ## Why this project exists
 
-In my previous internship, I noticed that we were handling our sensitive internal documentation/materials in an unsafe way that it may get compromised. For instance, files were often stored in consumer-grade cloud services like personal Google Drive accounts without enabling two-factor authentication (2FA), leading to risks of account compromises via phishing attacks. So, I researched how small scale companies handle their data and I found out that majority of them were handling their data similarly.
+In my previous internship, I noticed that we were handling our sensitive internal documentation/materials in an unsafe way that it may get compromised. For instance, files were often stored in cloud services like personal Google Drive accounts without enabling two-factor authentication (2FA) which would lead to account compromises via phishing attacks. So, I researched how small scale companies handle their data and I found out that majority of them were handling their data similarly.
 
 **While this solution is by no means the most optimal or secure approach, it represents my initial attempt to address the problem and captures the essence of my concept.**
 
