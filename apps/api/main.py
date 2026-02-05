@@ -1,4 +1,4 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 
 from typing import Any, Dict, Optional, List
 from uuid import UUID
@@ -9,6 +9,7 @@ from pydantic import BaseModel
 from sqlmodel import Session, select
 from sqlalchemy import text as sql_text
 from sentence_transformers import SentenceTransformer
+import torch
 
 from apps.api.core.db import get_session
 from apps.api.core.security import verify_password, create_access_token
@@ -30,14 +31,25 @@ app = FastAPI(title="RAG Enterprise KB (pgvector)", version="0.2.0")
 
 # Embedder is loaded once (fast for repeated queries)
 EMBED_MODEL = "sentence-transformers/all-MiniLM-L6-v2"
-embedder = SentenceTransformer(EMBED_MODEL)
+EMBEDDING_DEVICE = os.getenv("EMBEDDING_DEVICE", "auto").lower()
+if EMBEDDING_DEVICE == "auto":
+    EMBEDDING_DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
+embedder = SentenceTransformer(EMBED_MODEL, device=EMBEDDING_DEVICE)
+print(f"Embedding device: {EMBEDDING_DEVICE}")
 
 OLLAMA_URL = os.getenv("OLLAMA_URL", "http://ollama:11434").rstrip("/")
 OLLAMA_MODEL = os.getenv("OLLAMA_MODEL", "llama3.1:8b")
 USE_LLM = os.getenv("USE_LLM", "false").lower() in ("1", "true", "yes")
 OLLAMA_TIMEOUT_S = float(os.getenv("OLLAMA_TIMEOUT_S", "60"))
 
-cors_origins = [o.strip() for o in os.getenv("CORS_ORIGINS", "http://localhost:8501").split(",") if o.strip()]
+cors_origins = [
+    o.strip()
+    for o in os.getenv(
+        "CORS_ORIGINS",
+        "http://localhost:8501,http://localhost:3000,http://localhost:5173",
+    ).split(",")
+    if o.strip()
+]
 
 app.add_middleware(
     CORSMiddleware,
@@ -120,6 +132,7 @@ Context:
 
 Answer:
 """
+
 def _val(obj, key, default=None):
     # Works for dict-like and object-like results
     if isinstance(obj, dict):
@@ -298,7 +311,7 @@ def chat(
     "c.access_level <= :max_level",
     "d.access_level <= :max_level",]
 
-    alpha = 0.15  # keyword boost strength (tune 0.05–0.3)
+    alpha = 0.15  # keyword boost strength (tune 0.05â€“0.3)
     params = {
         "qvec": qvec,
         "qtext": req.query,
@@ -391,5 +404,3 @@ def chat(
             mode = "citations_only"
 
     return ChatResponse(query=req.query, answer=answer, mode=mode, results=results)
-
-   

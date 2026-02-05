@@ -1,19 +1,26 @@
-FROM python:3.12-slim
+﻿FROM node:20-alpine AS build
 
 WORKDIR /app
 
-RUN apt-get update && apt-get install -y --no-install-recommends curl \
-  && rm -rf /var/lib/apt/lists/*
+ARG VITE_API_URL=/api
+ENV VITE_API_URL=$VITE_API_URL
 
-RUN pip install --no-cache-dir uv
+COPY apps/web/package.json /app/package.json
+COPY apps/web/tsconfig.json /app/tsconfig.json
+COPY apps/web/tsconfig.node.json /app/tsconfig.node.json
+COPY apps/web/vite.config.ts /app/vite.config.ts
 
-ENV UV_PYTHON_DOWNLOADS=never
-ENV UV_PROJECT_ENVIRONMENT=/app/.venv
+RUN npm install
 
-COPY pyproject.toml uv.lock* /app/
-RUN uv sync --frozen --no-dev
+COPY apps/web/index.html /app/index.html
+COPY apps/web/src /app/src
 
-COPY . /app
+RUN npm run build
 
-EXPOSE 8501
-CMD ["uv", "run", "streamlit", "run", "apps/web/app.py", "--server.address=0.0.0.0", "--server.port=8501"]
+FROM nginx:1.27-alpine
+
+COPY apps/web/nginx.conf /etc/nginx/conf.d/default.conf
+COPY --from=build /app/dist /usr/share/nginx/html
+
+EXPOSE 3000
+CMD ["nginx", "-g", "daemon off;"]
