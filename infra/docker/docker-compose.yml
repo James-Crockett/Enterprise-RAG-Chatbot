@@ -1,21 +1,4 @@
-# services:
-#   db:
-#     image: pgvector/pgvector:pg16
-#     container_name: rag_pgvector_db
-#     environment:
-#       POSTGRES_USER: rag
-#       POSTGRES_PASSWORD: rag
-#       POSTGRES_DB: rag_kb
-#     ports:
-#       - "5432:5432"
-#     volumes:
-#       - rag_pgdata:/var/lib/postgresql/data
-#       - ./postgres/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
-
-# volumes:
-#   rag_pgdata:
-
-services:
+﻿services:
   db:
     image: pgvector/pgvector:pg16
     container_name: rag_pgvector_db
@@ -51,7 +34,7 @@ services:
         condition: service_healthy
     expose:
       - "8000"
-    ports: 
+    ports:
       - "8000:8000"
     volumes:
       - ../../data:/app/data  # so uploads/docs persist
@@ -60,12 +43,12 @@ services:
     build:
       context: ../..
       dockerfile: apps/web/Dockerfile
-    environment:
-      API_URL: http://api:8000
+      args:
+        VITE_API_URL: /api
     depends_on:
       - api
     ports:
-      - "8501:8501"
+      - "3000:3000"
 
   ollama:
       image: ollama/ollama:latest
@@ -77,7 +60,6 @@ services:
       # Optional: if you want to pull models from your host for testing:
       # ports:
       #   - "11434:11434"
-  
 
 volumes:
   pgdata:
