@@ -153,9 +153,6 @@ export default function App() {
           <div>
             <p className="eyebrow">Enterprise KB</p>
             <h1>Sign in to access the knowledge base.</h1>
-            <p className="subtext">
-              Authenticate first, then continue to the chat workspace.
-            </p>
           </div>
 
           <label className="field">
@@ -166,10 +163,6 @@ export default function App() {
               placeholder="/api"
             />
           </label>
-          <p className="helper-text">
-            This is the FastAPI backend the UI will call for login and chat. In
-            Docker, the web container proxies `/api` to the API service.
-          </p>
 
           <label className="field">
             <span>Email</span>
