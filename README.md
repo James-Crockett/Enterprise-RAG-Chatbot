@@ -25,7 +25,7 @@ This project solves that by:
 ---
 ## Demo
 
-https://github.com/user-attachments/assets/b3f1e7be-1ea6-4e86-b7ba-b570bd4b4a0f
+https://github.com/user-attachments/assets/a44f18bc-7fa4-43d2-ad1d-c9f0b861dd0e
 
 ---
 
