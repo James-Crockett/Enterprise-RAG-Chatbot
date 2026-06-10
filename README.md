@@ -53,12 +53,14 @@ https://github.com/user-attachments/assets/03f57462-72c0-4072-bbca-13587ef4a4f0
 - **Metadata filters** (e.g., department) supported to narrow retrieval.
 
 ### Usable interface
-- **Streamlit UI**: login + chat interface + sources view.
+- **React + TypeScript UI** (Vite): login + chat interface + sources view.
+- Configurable settings (API URL, top-k, department filter, answer mode) persisted in the browser.
+- Two answer modes: full **RAG** (LLM answer + citations) or **citations only** (retrieval without LLM generation).
 
 ### Containerized stack 
 Docker Compose stack with:
 - FastAPI backend
-- Streamlit frontend
+- React frontend (built with Vite, served by nginx with an `/api` reverse proxy to the backend)
 - Postgres + pgvector
 - Ollama (LLM)
 
@@ -68,11 +70,11 @@ Docker Compose stack with:
 
 ```text
                     ┌──────────────────────────┐
-                    │        Streamlit UI      │
+                    │   React UI (nginx)       │
                     │  - Login (JWT)           │
 User ──[Server]───► │  - Chat + Sources        │
                     └───────────┬──────────────┘
-                                │ HTTP
+                                │ HTTP (/api proxy)
                                 ▼
                     ┌──────────────────────────┐
                     │        FastAPI API       │
@@ -96,7 +98,7 @@ User ──[Server]───► │  - Chat + Sources        │
 ## Tech stack
 
 - **Backend:** FastAPI, SQLModel/SQLAlchemy
-- **Frontend:** Streamlit
+- **Frontend:** React 18 + TypeScript (Vite), served by nginx
 - **Vector store:** PostgreSQL + **pgvector**
 - **Embeddings:** sentence-transformers (Hugging Face)
 - **LLM:** llama3.1:8b
@@ -112,7 +114,7 @@ User ──[Server]───► │  - Chat + Sources        │
 rag-enterprise-kb/
 ├─ apps/
 │  ├─ api/            # FastAPI service (auth, retrieval, LLM chat)
-│  └─ web/            # Streamlit UI (login + chat)
+│  └─ web/            # React + TypeScript UI (Vite; login + chat)
 ├─ rag/
 │  └─ ingest/         # ingestion pipelines (pgvector ingestion)
 ├─ scripts/           # helper scripts (seed users, debug, etc.)
@@ -130,7 +132,7 @@ rag-enterprise-kb/
 
 ### 1) Prerequisites
 - Docker + Docker Compose
-- (Optional for local dev) Python 3.11+ + `uv`
+- (Optional for local dev) Python 3.11+ + `uv`, Node.js 20+
 
 ### 2) Start the stack
 From repo root:
@@ -167,16 +169,17 @@ docker compose -f infra/docker/docker-compose.yml exec api uv run python -m rag.
 ```
 
 ### 7) Open the UI
-- Streamlit: http://localhost:8501  
+- Web UI: http://localhost:3000  
 - API docs: http://localhost:8000/docs  
 
 ---
 
 ## Local development (no Docker)
 
-### 1) Install dependencies with uv
+### 1) Install dependencies
 ```bash
-uv sync
+uv sync                      # backend (Python)
+cd apps/web && npm install   # frontend (React)
 ```
 
 ### 2) Start Postgres (pgvector) + Ollama
@@ -192,8 +195,10 @@ uv run python -m rag.ingest.pg_ingest --input_dir data/raw --reset
 ### 4) Run backend + frontend
 ```bash
 uv run uvicorn apps.api.main:app --host 0.0.0.0 --port 8000 --reload
-uv run streamlit run apps/web/app.py
+cd apps/web && npm run dev
 ```
+
+> In local dev (without the nginx proxy), point the UI at the backend directly: set `VITE_API_URL=http://localhost:8000` (or change the API URL in the UI settings panel).
 
 ---
 
@@ -201,11 +206,18 @@ uv run streamlit run apps/web/app.py
 
 Typical configuration (set in `.env` for Docker Compose):
 
+Backend:
 - `DATABASE_URL` — Postgres connection string
 - `JWT_SECRET` — signing secret for tokens
+- `JWT_EXPIRE_MINUTES` — token lifetime (default `120`)
 - `OLLAMA_URL` — e.g. `http://ollama:11434` (in Docker)
 - `OLLAMA_MODEL` — e.g. `llama3.1:8b`
+- `USE_LLM` — enable LLM answer generation (`true`/`false`)
+- `OLLAMA_TIMEOUT_S` — LLM request timeout in seconds
 - `CORS_ORIGINS` — allowed UI origins
+
+Frontend (build-time):
+- `VITE_API_URL` — API base URL baked into the build (defaults to `/api`, which nginx proxies to the backend in Docker)
 
 ---
 
