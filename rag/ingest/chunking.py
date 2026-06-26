@@ -11,7 +11,7 @@ class Chunk:
 
 
 def _split_into_paragraphs(text: str) -> List[str]:
-    # Basic paragraph split: blank lines separate paragraphs
+    # blank lines mark paragraph boundaries.
     paras = []
     buf = []
     for line in text.splitlines():
@@ -53,7 +53,7 @@ def chunk_document(
     if current:
         chunks.append(current)
 
-    # add overlap by taking tail of previous chunk
+    # overlap keeps nearby context with the next chunk.
     overlapped: List[str] = []
     for i, ch in enumerate(chunks):
         if i == 0:

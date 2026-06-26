@@ -37,7 +37,7 @@
     ports:
       - "8000:8000"
     volumes:
-      - ../../data:/app/data  # so uploads/docs persist
+      - ../../data:/app/data  # mount sample docs for ingestion
 
   web:
     build:
@@ -57,7 +57,7 @@
         - ollama:/root/.ollama
       expose:
         - "11434"
-      # Optional: if you want to pull models from your host for testing:
+      # expose ollama only when testing it from the host.
       # ports:
       #   - "11434:11434"
 

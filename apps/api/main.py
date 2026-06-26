@@ -25,6 +25,7 @@ EMBED_MODEL = "sentence-transformers/all-MiniLM-L6-v2"
 EMBEDDING_DEVICE = os.getenv("EMBEDDING_DEVICE", "auto").lower()
 if EMBEDDING_DEVICE == "auto":
     EMBEDDING_DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
+# load the embedder once so requests only encode the query.
 embedder = SentenceTransformer(EMBED_MODEL, device=EMBEDDING_DEVICE)
 print(f"Embedding device: {EMBEDDING_DEVICE}")
 
@@ -33,7 +34,8 @@ OLLAMA_MODEL = os.getenv("OLLAMA_MODEL", "llama3.1:8b")
 USE_LLM = os.getenv("USE_LLM", "false").lower() in ("1", "true", "yes")
 OLLAMA_TIMEOUT_S = float(os.getenv("OLLAMA_TIMEOUT_S", "60"))
 
-ALLOWED_FILTER_KEYS = {"department", "source_path", "doc_type"}
+# keep filters tied to stored chunk metadata, not arbitrary sql fields.
+ALLOWED_FILTER_KEYS = {"department", "source_path", "source_type"}
 
 cors_origins = [
     origin.strip()
@@ -201,6 +203,7 @@ def retrieve_chunks(
             params[f"key{index}"] = key
             params[f"value{index}"] = str(value)
 
+    # enforce access in sql before chunks can reach the prompt.
     stmt = sql_text(
         f"""
         SELECT
@@ -287,6 +290,7 @@ def chat(
         answer = rag_answer(req.query, results)
         mode: Literal["rag", "citations_only"] = "rag"
     except Exception:
+        # keep the app usable when ollama is disabled or unavailable.
         answer = citations_only_answer(chunk_texts)
         mode = "citations_only"
 
