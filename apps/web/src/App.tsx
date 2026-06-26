@@ -23,7 +23,6 @@ const DEFAULT_API = resolveDefaultApi();
 const STORAGE_KEY = "rag_kb_settings";
 
 type Settings = {
-  apiUrl: string;
   topK: number;
   department: string;
   mode: "rag" | "citations_only";
@@ -31,7 +30,6 @@ type Settings = {
 };
 
 const defaultSettings: Settings = {
-  apiUrl: DEFAULT_API,
   topK: 5,
   department: "(none)",
   mode: "rag",
@@ -42,15 +40,7 @@ function loadSettings(): Settings {
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
     if (!raw) return defaultSettings;
-    const merged = { ...defaultSettings, ...JSON.parse(raw) } as Settings;
-    // If the UI is running in the browser, avoid docker-only hostnames.
-    if (
-      typeof window !== "undefined" &&
-      merged.apiUrl.startsWith("http://api:")
-    ) {
-      merged.apiUrl = "/api";
-    }
-    return merged;
+    return { ...defaultSettings, ...JSON.parse(raw) } as Settings;
   } catch {
     return defaultSettings;
   }
@@ -88,14 +78,14 @@ export default function App() {
     setDebug(null);
     setBusy(true);
     try {
-      const result = await login(settings.apiUrl, settings.email, password);
+      const result = await login(DEFAULT_API, settings.email, password);
       setToken(result.access_token);
       setStatus("Logged in successfully.");
     } catch (err) {
       const message = err instanceof Error ? err.message : "Login failed.";
       setStatus(message);
       setDebug(
-        `Login failed at ${new Date().toLocaleTimeString()} using ${settings.apiUrl}.`
+        `Login failed at ${new Date().toLocaleTimeString()}.`
       );
     } finally {
       setBusy(false);
@@ -119,7 +109,7 @@ export default function App() {
     setDebug(null);
 
     try {
-      const response = await chat(settings.apiUrl, token, {
+      const response = await chat(DEFAULT_API, token, {
         query: userMessage.content,
         top_k: settings.topK,
         filters,
@@ -137,7 +127,7 @@ export default function App() {
       const message = err instanceof Error ? err.message : "Request failed.";
       setStatus(message);
       setDebug(
-        `Chat request failed at ${new Date().toLocaleTimeString()} using ${settings.apiUrl}.`
+        `Chat request failed at ${new Date().toLocaleTimeString()}.`
       );
     } finally {
       setBusy(false);
@@ -152,17 +142,8 @@ export default function App() {
         <div className="auth-card">
           <div>
             <p className="eyebrow">Enterprise KB</p>
-            <h1>Sign in to access the knowledge base.</h1>
+            <h1>Sign in</h1>
           </div>
-
-          <label className="field">
-            <span>API URL</span>
-            <input
-              value={settings.apiUrl}
-              onChange={(e) => onUpdate({ apiUrl: e.target.value })}
-              placeholder="/api"
-            />
-          </label>
 
           <label className="field">
             <span>Email</span>
@@ -207,18 +188,6 @@ export default function App() {
         <section className="panel settings">
           <h2>Retrieval controls</h2>
           <p className="panel-lede">Tune search behavior for this session.</p>
-
-          <label className="field">
-            <span>API URL</span>
-            <input
-              value={settings.apiUrl}
-              onChange={(e) => onUpdate({ apiUrl: e.target.value })}
-              placeholder="/api"
-            />
-          </label>
-          <p className="helper-text">
-            Backend URL for login and chat requests.
-          </p>
 
           <label className="field">
             <span>Top-K sources</span>
