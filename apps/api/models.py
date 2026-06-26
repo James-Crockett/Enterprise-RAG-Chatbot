@@ -16,13 +16,7 @@ class User(SQLModel, table=True):
     email: str = Field(nullable=False, unique=True, index=True)
     hashed_password: str
 
-    # permissions model (clearance)
-    # 0=public, 1=internal, 2=restricted
     max_access_level: int = Field(default=0, nullable=False)
-
-    # admin flag for uploads/reindex later
-    is_admin: bool = Field(default=False, nullable=False)
-
     is_active: bool = Field(default=True, nullable=False)
     created_at: datetime = Field(default_factory=datetime.utcnow, nullable=False)
 
@@ -47,7 +41,7 @@ class Chunk(SQLModel, table=True):
     page: Optional[int] = None
     text: str
 
-    # SQLAlchemy reserves "metadata", so use "meta" in Python but map to "metadata" column
+    # sqlalchemy reserves metadata, so the model uses meta for that column.
     meta: Dict[str, Any] = Field(
         sa_column=Column("metadata", JSONB, nullable=False, default={})
     )
