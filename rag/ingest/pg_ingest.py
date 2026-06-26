@@ -57,13 +57,12 @@ def main():
     if not input_dir.exists():
         raise SystemExit(f"Input dir not found: {input_dir.resolve()}")
 
-    # Load docs (MD/TXT/PDF)
+    # load source files into page/document records.
     loaded_docs: List[LoadedDocument] = load_documents(input_dir)
     if not loaded_docs:
         raise SystemExit(f"No documents found in {input_dir.resolve()}")
 
-    # Build chunks with metadata
-    # store key citation fields in Chunk.meta so /chat can display them.
+    # keep citation fields with each chunk for the chat response.
     chunk_rows: List[Dict[str, Any]] = []
     document_rows: List[Document] = []
 
@@ -89,7 +88,7 @@ def main():
         )
 
         for ch in chunks:
-            # keep same access_level as doc (or override later if needed)
+            # chunks inherit the source document clearance.
             chunk_meta = dict(ch.metadata)
             chunk_meta["access_level"] = access_level
 
@@ -99,12 +98,12 @@ def main():
                     "chunk_index": chunk_meta.get("chunk_index", 0),
                     "page": chunk_meta.get("page"),
                     "text": ch.text,
-                    "meta": chunk_meta,  # NOTE: model field is "meta", DB column is "metadata"
+                    "meta": chunk_meta,  # sqlmodel field is meta; postgres column is metadata.
                     "access_level": access_level,
                 }
             )
 
-    # Embed all chunk texts (batch)
+    # batch embeddings once so inserts stay simple.
     embedder = SentenceTransformer(args.model)
     texts = [r["text"] for r in chunk_rows]
     embs = embedder.encode(texts, normalize_embeddings=True, batch_size=32, show_progress_bar=True)
@@ -113,17 +112,15 @@ def main():
     if embs.shape[1] != 384:
         raise SystemExit(f"Unexpected embedding dim {embs.shape[1]} (expected 384). Are you using MiniLM?")
 
-    # Insert into Postgres
+    # insert documents before chunks because chunks reference document ids.
     with Session(engine) as session:
         if args.reset:
             reset_tables(session)
 
-        # Insert documents first
         for doc in document_rows:
             session.add(doc)
         session.commit()
 
-        # Insert chunks
         for i, r in enumerate(chunk_rows):
             emb = embs[i].tolist()
             c = Chunk(

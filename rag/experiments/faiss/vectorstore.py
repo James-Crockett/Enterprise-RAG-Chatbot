@@ -40,7 +40,7 @@ class LocalVectorStore:
         return True
 
     def retrieve(self, query: str, k: int = 5, filters: Optional[Dict[str, Any]] = None) -> List[RetrievedChunk]:
-        # Over-fetch then filter, because FAISS itself doesn't filter metadata in this simple setup.
+        # overfetch before metadata filtering because faiss only knows vectors.
         overfetch = max(k * 5, 20)
 
         q = self.model.encode([query], normalize_embeddings=True).astype("float32")

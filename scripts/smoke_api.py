@@ -59,6 +59,7 @@ def main() -> None:
         response = chat(token)
         results = response.get("results") or []
 
+        # every returned source must fit the user's clearance.
         blocked = [
             result
             for result in results

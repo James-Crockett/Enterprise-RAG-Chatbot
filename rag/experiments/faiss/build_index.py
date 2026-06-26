@@ -38,7 +38,7 @@ def main():
     if not docs:
         raise SystemExit(f"No documents found in {input_dir.resolve()}")
 
-    # Chunk all documents
+    # this experiment keeps vectors and text on disk instead of postgres.
     chunks = []
     for d in docs:
         chunks.extend(
@@ -53,23 +53,21 @@ def main():
     if not chunks:
         raise SystemExit("No chunks produced. Check your loaders/chunking.")
 
-    # Embed chunks
     model = SentenceTransformer(args.model)
     texts = [c.text for c in chunks]
     embeddings = model.encode(texts, normalize_embeddings=True, batch_size=32, show_progress_bar=True)
     embeddings = np.asarray(embeddings, dtype="float32")
 
-    # Build FAISS index (cosine via normalized + inner product)
+    # normalized vectors make inner product behave like cosine similarity.
     dim = embeddings.shape[1]
     index = faiss.IndexFlatIP(dim)
     index.add(embeddings)
 
-    # Persist index
     index_dir.mkdir(parents=True, exist_ok=True)
     index_path = index_dir / "index.faiss"
     faiss.write_index(index, str(index_path))
 
-    # Persist docstore (chunk text + metadata + id)
+    # keep the docstore beside the index so retrieval is self-contained.
     docstore_dir.mkdir(parents=True, exist_ok=True)
     chunks_path = docstore_dir / "chunks.jsonl"
 
