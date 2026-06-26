@@ -16,11 +16,16 @@ def hash_password(pw: str) -> str:
 def verify_password(pw: str, hashed: str) -> bool:
     return pwd_context.verify(pw, hashed)
 
+def jwt_secret() -> str:
+    if not JWT_SECRET:
+        raise RuntimeError("JWT_SECRET is required")
+    return JWT_SECRET
+
 def create_access_token(payload: Dict[str, Any]) -> str:
     exp = datetime.utcnow() + timedelta(minutes=JWT_EXPIRE_MINUTES)
     to_encode = dict(payload)
     to_encode["exp"] = exp
-    return jwt.encode(to_encode, JWT_SECRET, algorithm=JWT_ALG)
+    return jwt.encode(to_encode, jwt_secret(), algorithm=JWT_ALG)
 
 def decode_token(token: str) -> Dict[str, Any]:
-    return jwt.decode(token, JWT_SECRET, algorithms=[JWT_ALG])
+    return jwt.decode(token, jwt_secret(), algorithms=[JWT_ALG])

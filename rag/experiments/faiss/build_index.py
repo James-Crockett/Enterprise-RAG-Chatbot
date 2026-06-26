@@ -23,8 +23,8 @@ def write_jsonl(path: Path, rows: List[Dict[str, Any]]) -> None:
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--input_dir", type=str, default="data/raw")
-    parser.add_argument("--index_dir", type=str, default="storage/faiss")
-    parser.add_argument("--docstore_dir", type=str, default="storage/docstore")
+    parser.add_argument("--index_dir", type=str, default="rag/experiments/faiss/storage/faiss")
+    parser.add_argument("--docstore_dir", type=str, default="rag/experiments/faiss/storage/docstore")
     parser.add_argument("--model", type=str, default="sentence-transformers/all-MiniLM-L6-v2")
     parser.add_argument("--max_chars", type=int, default=1200)
     parser.add_argument("--overlap_chars", type=int, default=200)
