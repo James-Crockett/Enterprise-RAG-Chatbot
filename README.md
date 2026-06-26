@@ -2,9 +2,9 @@
 
 A permission-aware RAG chatbot for querying internal company-style documents. It ingests markdown, text, and PDF files, stores embeddings in Postgres with pgvector, and serves authenticated chat through a FastAPI backend and React UI.
 
-The main project path is pgvector-backed retrieval with access checks in SQL. A FAISS prototype is kept under `rag/experiments/faiss` as a learning/comparison path, not as the running app backend.
+The main project path is pgvector-backed retrieval with access checks in SQL. A FAISS prototype is kept under `rag/experiments/faiss` as a learning/comparison path.
 
-> This is a prototype for the RAG pipeline and access-control model. It is not a production security system.
+> This is a prototype for the RAG pipeline and access-control model. It is not a production system.
 
 ## Demo
 
