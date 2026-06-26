@@ -1,300 +1,215 @@
-# RAG-Powered Enterprise Knowledge Base (KB) Chatbot
+# RAG-Powered Enterprise Knowledge Base Chatbot
 
-A permission-aware Retrieval-Augmented Generation (RAG) chatbot for querying a company-style knowledge base (policies, IT runbooks, onboarding docs, FAQs). The system combines vector retrieval (pgvector) with a local LLM (Ollama) to generate concise, context-aware answers grounded in retrieved sources and filtered by user permissions.
+A permission-aware RAG chatbot for querying internal company-style documents. It ingests markdown, text, and PDF files, stores embeddings in Postgres with pgvector, and serves authenticated chat through a FastAPI backend and React UI.
 
-**Flow**: End-to-end ingestion → embeddings → vector search → authenticated chat API → LLM answer generation → UI, with a containerized workflow for repeatable runs.
-> Note: I have not audited the code for security vulnerabilities. Please review further if you want to deploy in a production environment.
----
+The main project path is pgvector-backed retrieval with access checks in SQL. A FAISS prototype is kept under `rag/experiments/faiss` as a learning/comparison path, not as the running app backend.
 
-## Why this project exists
+> This is a prototype for the RAG pipeline and access-control model. It is not a production security system.
 
-In my previous internship, I noticed that we were handling our sensitive internal documentation/materials in an unsafe way that it may get compromised. For instance, files were often stored in cloud services like personal Google Drive accounts without enabling two-factor authentication (2FA) which would lead to account compromises via phishing attacks. So, I researched how small scale companies handle their data and I found out that majority of them were handling their data similarly.
-
-**While this solution is by no means the most optimal or secure approach, it represents my initial attempt to address the problem and captures the essence of my concept.**
-
-In addition to security, in many companies, institutional knowledge is scattered across wikis, docs, PDFs, and internal portals. A lot of employees waste time searching and asking around, and restricted information must remain protected.
-
-This project solves that by:
-- indexing internal documents into a vector database,
-- retrieving the best matching chunks for a question,
-- using an LLM to synthesize a grounded answer,
-- enforcing **access controls at retrieval time** so restricted content never reaches the LLM for unauthorized users.
-
-> This project prioritizes the RAG pipeline and security logic; it is fully containerized to support flexible deployment across various server infrastructures.
-
----
 ## Demo
 
 https://github.com/user-attachments/assets/03f57462-72c0-4072-bbca-13587ef4a4f0
 
----
+## What It Does
 
-## Key features
-
-### RAG pipeline (end-to-end)
-- **Ingestion**: load docs from a directory, chunk them, store rich metadata.
-- **Embeddings**: embed chunks with a sentence-transformer model.
-- **Vector search**: top-k similarity search using **pgvector** inside Postgres.
-- **Grounded answers**: retrieved chunks are passed into the LLM, which answers using only that context.
-- **Citations**: responses include a source list (doc title/path, metadata, similarity score).
-
-### LLM answer generation (Ollama)
-- Runs a LLM via Ollama.
-- Prompts are structured to:
-  - answer **only using retrieved context**,
-  - return **concise**, actionable outputs,
-  - refuse when context is insufficient (avoid hallucinations).
-- Configurable model + endpoint via environment variables.
-
-### Enterprise access controls
-- **Auth**: users log in and receive a bearer token.
-- **Access levels**: both content and users have access levels (`public`, `internal`, `restricted`).
-- **Hard enforcement in SQL**: retrieval query includes `access_level <= user.max_access_level`, preventing leakage.
-- **Metadata filters** (e.g., department) supported to narrow retrieval.
-
-### Usable interface
-- **React + TypeScript UI** (Vite): login + chat interface + sources view.
-- Configurable settings (API URL, top-k, department filter, answer mode) persisted in the browser.
-- Two answer modes: full **RAG** (LLM answer + citations) or **citations only** (retrieval without LLM generation).
-
-### Containerized stack 
-Docker Compose stack with:
-- FastAPI backend
-- React frontend (built with Vite, served by nginx with an `/api` reverse proxy to the backend)
-- Postgres + pgvector
-- Ollama (LLM)
-
----
+- Ingests documents from `data/raw/`
+- Chunks documents and stores metadata
+- Embeds chunks with `sentence-transformers`
+- Retrieves top-k matches from Postgres + pgvector
+- Filters retrieval by user access level before anything reaches the LLM
+- Optionally asks Ollama to generate a grounded answer from retrieved context
+- Returns answer text plus source citations
+- Provides a React UI for login, chat, filters, modes, and source inspection
 
 ## Architecture
 
 ```text
-                    ┌──────────────────────────┐
-                    │   React UI (nginx)       │
-                    │  - Login (JWT)           │
-User ──[Server]───► │  - Chat + Sources        │
-                    └───────────┬──────────────┘
-                                │ HTTP (/api proxy)
-                                ▼
-                    ┌──────────────────────────┐
-                    │        FastAPI API       │
-                    │  /auth/login             │
-                    │  /chat (RAG + LLM)       │
-                    │  - permission-aware SQL  │
-                    │  - LLM prompt + response │
-                    └───────┬─────────┬────────┘
-                            │         │
-                            │ SQL     │ HTTP
-                            ▼         ▼
-                ┌────────────────┐  ┌────────────────┐
-                │ Postgres+pgvec │  │     Ollama     │
-                │ documents      │  │ local LLM model│
-                │ chunks (vector)│  │ /api/chat      │
-                └────────────────┘  └────────────────┘
+React UI (nginx)
+  login + chat + sources
+        |
+        | /api proxy
+        v
+FastAPI
+  /auth/login
+  /chat
+  jwt auth
+  permission-aware pgvector query
+        |                         |
+        | SQL                     | HTTP
+        v                         v
+Postgres + pgvector            Ollama
+documents/chunks               local LLM
 ```
 
----
-
-## Tech stack
-
-- **Backend:** FastAPI, SQLModel/SQLAlchemy
-- **Frontend:** React 18 + TypeScript (Vite), served by nginx
-- **Vector store:** PostgreSQL + **pgvector**
-- **Embeddings:** sentence-transformers (Hugging Face)
-- **LLM:** llama3.1:8b
-- **Auth:** token-based (login → bearer token)
-- **Dev tooling:** `uv`
-- **Containers:** Docker + Docker Compose
-
----
-
-## Repository layout (high-level)
+## Repository Layout
 
 ```text
-rag-enterprise-kb/
-├─ apps/
-│  ├─ api/            # FastAPI service (auth, retrieval, LLM chat)
-│  └─ web/            # React + TypeScript UI (Vite; login + chat)
-├─ rag/
-│  └─ ingest/         # ingestion pipelines (pgvector ingestion)
-├─ scripts/           # helper scripts (seed users, debug, etc.)
-├─ data/
-│  └─ raw/            # sample docs (your KB corpus)
-├─ infra/
-│  └─ docker/         # docker compose + Dockerfiles
-├─ pyproject.toml     # dependencies (uv)
-└─ README.md
+apps/api/                  FastAPI app, auth, chat, retrieval
+apps/web/                  React + TypeScript UI
+data/raw/                  sample knowledge-base documents
+infra/docker/              compose stack and postgres init SQL
+rag/ingest/                document loading, chunking, pgvector ingest
+rag/experiments/faiss/     older FAISS retrieval experiment
+scripts/seed_users.py      creates demo users
+scripts/smoke_api.py       login/chat/access-level smoke check
 ```
 
----
+## Quickstart With Docker
 
-## Quickstart: Docker Compose
+Prerequisites:
 
-### 1) Prerequisites
-- Docker + Docker Compose
-- (Optional for local dev) Python 3.11+ + `uv`, Node.js 20+
+- Docker with Compose
+- enough disk space for the Python image, model dependencies, and Ollama model
 
-### 2) Start the stack
-From repo root:
+Create an env file:
 
 ```bash
-docker compose -f infra/docker/docker-compose.yml up -d --build
-docker compose -f infra/docker/docker-compose.yml ps
+cp infra/docker/.env.example infra/docker/.env
 ```
 
-### 3) Pull an Ollama model (LLM)
-Inside the Ollama container:
+Edit `infra/docker/.env` and set a real `JWT_SECRET`.
+
+Start the stack:
 
 ```bash
-docker compose -f infra/docker/docker-compose.yml exec ollama ollama pull llama3.1:8b
+docker compose --env-file infra/docker/.env -f infra/docker/docker-compose.yml up -d --build
 ```
 
-> You can choose a smaller model if needed (e.g., `phi3`, `llama3.2:3b`) for faster CPU-only runs.
-
-### 4) Initialize DB schema (first run)
-```bash
-docker compose -f infra/docker/docker-compose.yml exec api uv run python -c "from apps.api.core.db import engine; from sqlmodel import SQLModel; import apps.api.models as m; SQLModel.metadata.create_all(engine); print('tables created')"
-```
-
-### 5) Seed demo users
-```bash
-docker compose -f infra/docker/docker-compose.yml exec api uv run python -m scripts.seed_users
-```
-
-### 6) Ingest documents
-Put docs into `data/raw/` and run:
+Pull the Ollama model:
 
 ```bash
-docker compose -f infra/docker/docker-compose.yml exec api uv run python -m rag.ingest.pg_ingest --input_dir data/raw --reset
+docker compose --env-file infra/docker/.env -f infra/docker/docker-compose.yml exec ollama ollama pull llama3.1:8b
 ```
 
-### 7) Open the UI
-- Web UI: http://localhost:3000  
-- API docs: http://localhost:8000/docs  
+Seed users and ingest the sample docs:
 
----
-
-## Local development (no Docker)
-
-### 1) Install dependencies
 ```bash
-uv sync                      # backend (Python)
-cd apps/web && npm install   # frontend (React)
+docker compose --env-file infra/docker/.env -f infra/docker/docker-compose.yml exec api uv run python -m scripts.seed_users
+docker compose --env-file infra/docker/.env -f infra/docker/docker-compose.yml exec api uv run python -m rag.ingest.pg_ingest --input_dir data/raw --reset
 ```
 
-### 2) Start Postgres (pgvector) + Ollama
-- Use Docker for DB/Ollama **or** run them locally.
-- Ensure your environment variables point to the correct endpoints.
+Open:
 
-### 3) Seed + ingest
+- Web UI: http://localhost:3000
+- API docs: http://localhost:8000/docs
+
+## Local Development
+
+Backend dependencies:
+
+```bash
+uv sync
+```
+
+Frontend dependencies:
+
+```bash
+npm --prefix apps/web ci
+```
+
+Run Postgres/pgvector and Ollama with Docker or local services, then set environment variables:
+
+```bash
+export DATABASE_URL='postgresql+psycopg://rag:rag@127.0.0.1:5432/rag_kb'
+export JWT_SECRET='replace-with-a-long-random-secret'
+export OLLAMA_URL='http://127.0.0.1:11434'
+export USE_LLM='false'
+```
+
+If you are not using the Docker DB service, apply `infra/docker/postgres/init.sql` to your local Postgres database before seeding.
+
+Seed and ingest:
+
 ```bash
 uv run python -m scripts.seed_users
 uv run python -m rag.ingest.pg_ingest --input_dir data/raw --reset
 ```
 
-### 4) Run backend + frontend
+Run backend and frontend:
+
 ```bash
 uv run uvicorn apps.api.main:app --host 0.0.0.0 --port 8000 --reload
-cd apps/web && npm run dev
+npm --prefix apps/web run dev
 ```
 
-> In local dev (without the nginx proxy), point the UI at the backend directly: set `VITE_API_URL=http://localhost:8000` (or change the API URL in the UI settings panel).
+In local dev, set the UI API URL to `http://localhost:8000` in the settings panel.
 
----
-
-## Environment variables
-
-Typical configuration (set in `.env` for Docker Compose):
+## Environment Variables
 
 Backend:
-- `DATABASE_URL` — Postgres connection string
-- `JWT_SECRET` — signing secret for tokens
-- `JWT_EXPIRE_MINUTES` — token lifetime (default `120`)
-- `OLLAMA_URL` — e.g. `http://ollama:11434` (in Docker)
-- `OLLAMA_MODEL` — e.g. `llama3.1:8b`
-- `USE_LLM` — enable LLM answer generation (`true`/`false`)
-- `OLLAMA_TIMEOUT_S` — LLM request timeout in seconds
-- `CORS_ORIGINS` — allowed UI origins
 
-Frontend (build-time):
-- `VITE_API_URL` — API base URL baked into the build (defaults to `/api`, which nginx proxies to the backend in Docker)
+- `DATABASE_URL`: Postgres connection string
+- `JWT_SECRET`: required token signing secret
+- `JWT_EXPIRE_MINUTES`: token lifetime, default `120`
+- `EMBEDDING_DEVICE`: `auto`, `cpu`, or `cuda`
+- `OLLAMA_URL`: Ollama endpoint
+- `OLLAMA_MODEL`: default `llama3.1:8b`
+- `USE_LLM`: `true` for Ollama answers, `false` for citations-only answers
+- `OLLAMA_TIMEOUT_S`: Ollama request timeout
+- `CORS_ORIGINS`: comma-separated allowed frontend origins
 
----
+Frontend:
 
-## Demo accounts and permissions
+- `VITE_API_URL`: API base URL baked into the Vite build, default `/api`
 
-The project uses numeric access levels:
+## Demo Users
 
-- `public` = 0
-- `internal` = 1
-- `restricted` = 2
+Run `scripts.seed_users` to create:
 
-Example demo users:
-- `public@demo.com`
-- `internal@demo.com`
-- `restricted@demo.com`
-
-The retrieval layer enforces:
-
-- `chunk.access_level <= user.max_access_level`
-
-So restricted users can retrieve everything; public users only retrieve public chunks.
-
----
-
-## How chat works (request flow)
-
-1) User logs in → receives token  
-2) UI sends `/chat` request with:
-   - query
-   - optional metadata filters (e.g., department)
-3) API:
-   - embeds the query
-   - runs permission-aware pgvector SQL top-k retrieval
-   - builds an LLM prompt using the retrieved chunks
-   - calls Ollama to generate the answer
-   - returns answer + citations
-
----
-
-## Grounding and hallucination control
-
-The prompt is designed to:
-- **only** use retrieved context,
-- say “I don’t know” when context is insufficient,
-- keep answers short and actionable,
-- include citations so users can verify.
-
-For additional safety:
-- retrieval is filtered by access level **before** sending to the LLM.
-
----
-
-## Troubleshooting
-
-### “no configuration file provided”
-You ran docker compose without specifying a file. Use:
-
-```bash
-docker compose -f infra/docker/docker-compose.yml <command>
+```text
+public@demo.com      public123      access 0
+internal@demo.com    internal123    access 1
+restricted@demo.com  restricted123  access 2
+admin@demo.com       admin123       access 2
 ```
 
-### “permission denied while trying to connect to the Docker daemon socket”
-Add your user to the docker group (Linux):
+The access model is intentionally simple:
 
-```bash
-sudo usermod -aG docker $USER
-newgrp docker
+```sql
+chunk.access_level <= user.max_access_level
+document.access_level <= user.max_access_level
 ```
 
-### Ollama model not found
-Pull it in the container:
+This check runs in the retrieval SQL before context is sent to Ollama.
+
+## Verification
+
+Backend syntax check:
 
 ```bash
-docker compose -f infra/docker/docker-compose.yml exec ollama ollama pull llama3.1:8b
+python -m py_compile apps/api/main.py apps/api/models.py scripts/seed_users.py scripts/smoke_api.py rag/ingest/pg_ingest.py
 ```
 
-### DB schema missing (relation does not exist)
-Run the schema init command shown in Quickstart step 4.
+Frontend build:
 
----
+```bash
+npm --prefix apps/web run build
+```
+
+API smoke check, after the API is running and data is seeded:
+
+```bash
+python scripts/smoke_api.py
+```
+
+The smoke script logs in as each demo user, calls `/chat`, and fails if any returned source is above that user's access level.
+
+## FAISS Experiment
+
+The FAISS code under `rag/experiments/faiss` is preserved as an earlier retrieval prototype. It is useful for explaining the learning path from local vector search to pgvector-backed retrieval.
+
+Build the FAISS experiment index:
+
+```bash
+uv run python -m rag.experiments.faiss.build_index --input_dir data/raw
+```
+
+The running app does not use this path.
+
+## Limitations
+
+- Demo credentials are for local testing only.
+- Access control is numeric and document-level/chunk-level, not a full enterprise RBAC model.
+- JWT auth is intentionally minimal.
+- Ollama runs locally and must have the configured model pulled.
+- The app does not include document upload or admin workflows.
