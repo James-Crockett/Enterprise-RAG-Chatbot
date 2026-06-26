@@ -200,16 +200,6 @@ export default function App() {
         <div>
           <p className="eyebrow">Enterprise KB</p>
           <h1>Permission-aware knowledge search.</h1>
-          <p className="subtext">
-            Authenticated RAG chat backed by pgvector and Ollama.
-          </p>
-        </div>
-        <div className="status-card">
-          <div className="status-label">API</div>
-          <div className="status-value">{settings.apiUrl}</div>
-          <div className={`status-pill ${token ? "live" : "idle"}`}>
-            {token ? "Authenticated" : "Not logged in"}
-          </div>
         </div>
       </header>
 
