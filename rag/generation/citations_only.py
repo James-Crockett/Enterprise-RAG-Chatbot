@@ -6,7 +6,7 @@ from typing import List, Tuple
 import numpy as np
 from sentence_transformers import SentenceTransformer
 
-from rag.retrieval.vectorstore import RetrievedChunk
+from rag.experiments.faiss.vectorstore import RetrievedChunk
 
 
 _SENT_SPLIT = re.compile(r"(?<=[.!?])\s+")
