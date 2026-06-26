@@ -1,7 +1,7 @@
 ﻿export type ChatRole = "user" | "assistant";
 
 export type Citation = {
-  document_id: number;
+  document_id: string;
   title: string;
   source_path: string;
   department: string;
