@@ -8,8 +8,8 @@
       POSTGRES_DB: rag_kb
     volumes:
       - pgdata:/var/lib/postgresql/data
-      - ./init.sql:/docker-entrypoint-initdb.d/init.sql:ro
-    # IMPORTANT: don't expose db publicly on a server
+      - ./postgres/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
+    # keep postgres private unless you are debugging locally.
     # ports:
     #   - "5432:5432"
     healthcheck:
@@ -24,7 +24,7 @@
       dockerfile: apps/api/Dockerfile
     environment:
       DATABASE_URL: postgresql+psycopg://rag:ragpass@db:5432/rag_kb
-      JWT_SECRET: "wake-up-f1lthy"
+      JWT_SECRET: ${JWT_SECRET:?set JWT_SECRET in your shell or env file}
       OLLAMA_URL: "http://ollama:11434"
       OLLAMA_MODEL: "llama3.1:8b"
       USE_LLM: "true"
