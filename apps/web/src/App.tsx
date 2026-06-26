@@ -62,7 +62,7 @@ function persistSettings(settings: Settings) {
 
 export default function App() {
   const [settings, setSettings] = useState<Settings>(loadSettings);
-  const [password, setPassword] = useState("internal123");
+  const [password, setPassword] = useState("");
   const [token, setToken] = useState<string | null>(null);
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [prompt, setPrompt] = useState("");
