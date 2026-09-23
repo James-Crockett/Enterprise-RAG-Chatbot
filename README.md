@@ -179,6 +179,23 @@ document.access_level <= user.max_access_level
 
 This check runs in the retrieval SQL before context is sent to Ollama.
 
+## Sample Data
+
+`data/raw/` holds 59 markdown docs for a fictional logistics SaaS company, Kestrel Systems. The folder path sets each doc's metadata:
+
+```text
+data/raw/<tier>/<department>/<file>.md
+```
+
+The tier sets the access level: `public` is 0, `internal` is 1, `restricted` is 2. The department is the folder name under the tier, and files sitting directly under a tier get `general`. The UI loads its department filter from `GET /departments`, which only lists departments the user can read.
+
+Some questions to try:
+
+- "How do I roll back a bad deploy?" (internal, engineering)
+- "What is the hotel limit in New York?" (internal, finance)
+- "Who approves a 30 percent discount?" (internal, sales)
+- "What did the 2026 pentest find?" (restricted only; internal users get no pentest sources)
+
 ## Chat History
 
 Every `/chat` call saves the question and the answer, including the cited sources, to the `conversations` and `messages` tables. Pass `conversation_id` to add to an existing chat. Leave it out to start a new one, and the response returns the new id.
