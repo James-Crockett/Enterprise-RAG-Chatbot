@@ -1,4 +1,4 @@
-﻿export type ChatRole = "user" | "assistant";
+export type ChatRole = "user" | "assistant";
 
 export type Citation = {
   document_id: string;
@@ -19,6 +19,7 @@ export type ChatMessage = {
   role: ChatRole;
   content: string;
   results?: ChunkResult[];
+  error?: boolean;
 };
 
 export type ChatResponse = {
@@ -26,4 +27,20 @@ export type ChatResponse = {
   answer: string;
   mode: string;
   results: ChunkResult[];
+  conversation_id: string;
+};
+
+export type ConversationSummary = {
+  id: string;
+  title: string;
+  updated_at: string;
+};
+
+export type ConversationDetail = ConversationSummary & {
+  messages: {
+    role: ChatRole;
+    content: string;
+    mode: string | null;
+    results: ChunkResult[];
+  }[];
 };

@@ -2,7 +2,9 @@ from __future__ import annotations
 
 import json
 import os
+from datetime import datetime
 from typing import Any, Literal
+from uuid import UUID
 
 import torch
 from fastapi import Depends, FastAPI, HTTPException
@@ -10,14 +12,14 @@ from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 from sentence_transformers import SentenceTransformer
 from sqlalchemy import text as sql_text
-from sqlmodel import Session, select
+from sqlmodel import Session, col, select
 from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
 
 from apps.api.core.db import get_session
 from apps.api.core.deps import get_current_user
 from apps.api.core.security import create_access_token, verify_password
-from apps.api.models import User
+from apps.api.models import Conversation, Message, User
 
 app = FastAPI(title="RAG Enterprise KB (pgvector)", version="0.2.0")
 
@@ -50,7 +52,7 @@ app.add_middleware(
     CORSMiddleware,
     allow_origins=cors_origins,
     allow_credentials=False,
-    allow_methods=["POST", "GET"],
+    allow_methods=["POST", "GET", "DELETE"],
     allow_headers=["Authorization", "Content-Type"],
 )
 
@@ -66,10 +68,12 @@ class LoginResponse(BaseModel):
 
 
 class ChatRequest(BaseModel):
-    query: str
+    query: str = Field(min_length=1, max_length=4000)
     top_k: int = Field(default=5, ge=1, le=10)
     filters: dict[str, Any] | None = None
     mode: Literal["rag", "citations_only"] = "rag"
+    # omit to start a new conversation.
+    conversation_id: UUID | None = None
 
 
 class CitationOut(BaseModel):
@@ -92,6 +96,24 @@ class ChatResponse(BaseModel):
     answer: str = ""
     mode: Literal["rag", "citations_only"] = "citations_only"
     results: list[ChunkOut] = Field(default_factory=list)
+    conversation_id: str
+
+
+class ConversationOut(BaseModel):
+    id: str
+    title: str
+    updated_at: datetime
+
+
+class MessageOut(BaseModel):
+    role: Literal["user", "assistant"]
+    content: str
+    mode: str | None = None
+    results: list[ChunkOut] = Field(default_factory=list)
+
+
+class ConversationDetail(ConversationOut):
+    messages: list[MessageOut]
 
 
 def citations_only_answer(chunks: list[str]) -> str:
@@ -246,6 +268,21 @@ def retrieve_chunks(
     return results
 
 
+def owned_conversation(session: Session, conversation_id: UUID, user: User) -> Conversation:
+    conversation = session.get(Conversation, conversation_id)
+    # 404 for other users' chats too, so ids can't be probed.
+    if not conversation or conversation.user_id != user.id:
+        raise HTTPException(status_code=404, detail="Conversation not found")
+    return conversation
+
+
+def conversation_title(query: str, max_chars: int = 60) -> str:
+    title = " ".join(query.split())
+    if len(title) <= max_chars:
+        return title
+    return title[: max_chars - 3].rstrip() + "..."
+
+
 @app.get("/health")
 def health():
     return {"ok": True, "embed_model": EMBED_MODEL}
@@ -269,6 +306,12 @@ def chat(
     session: Session = Depends(get_session),
     user: User = Depends(get_current_user),
 ):
+    # check ownership before spending time on retrieval and the llm.
+    if req.conversation_id:
+        conversation = owned_conversation(session, req.conversation_id, user)
+    else:
+        conversation = Conversation(user_id=user.id, title=conversation_title(req.query))
+
     results = retrieve_chunks(
         session=session,
         query=req.query,
@@ -278,20 +321,111 @@ def chat(
     )
     chunk_texts = [result.text for result in results]
 
+    mode: Literal["rag", "citations_only"] = "citations_only"
     if req.mode == "citations_only" or not USE_LLM:
-        return ChatResponse(
-            query=req.query,
-            answer=citations_only_answer(chunk_texts),
-            mode="citations_only",
-            results=results,
+        answer = citations_only_answer(chunk_texts)
+    else:
+        try:
+            answer = rag_answer(req.query, results)
+            mode = "rag"
+        except Exception:
+            # keep the app usable when ollama is disabled or unavailable.
+            answer = citations_only_answer(chunk_texts)
+
+    conversation.updated_at = datetime.utcnow()
+    session.add(conversation)
+    session.add(Message(conversation_id=conversation.id, role="user", content=req.query, sources=[]))
+    session.add(
+        Message(
+            conversation_id=conversation.id,
+            role="assistant",
+            content=answer,
+            mode=mode,
+            sources=[result.model_dump(mode="json") for result in results],
+        )
+    )
+    session.commit()
+
+    return ChatResponse(
+        query=req.query,
+        answer=answer,
+        mode=mode,
+        results=results,
+        conversation_id=str(conversation.id),
+    )
+
+
+@app.get("/departments", response_model=list[str])
+def departments(
+    session: Session = Depends(get_session),
+    user: User = Depends(get_current_user),
+):
+    # only list departments the user can actually retrieve from.
+    rows = session.execute(
+        sql_text(
+            "SELECT DISTINCT department FROM documents "
+            "WHERE access_level <= :max_level ORDER BY department"
+        ),
+        {"max_level": user.max_access_level},
+    ).all()
+    return [row[0] for row in rows]
+
+
+@app.get("/conversations", response_model=list[ConversationOut])
+def list_conversations(
+    session: Session = Depends(get_session),
+    user: User = Depends(get_current_user),
+):
+    conversations = session.exec(
+        select(Conversation)
+        .where(Conversation.user_id == user.id)
+        .order_by(col(Conversation.updated_at).desc())
+    ).all()
+    return [
+        ConversationOut(id=str(c.id), title=c.title, updated_at=c.updated_at)
+        for c in conversations
+    ]
+
+
+@app.get("/conversations/{conversation_id}", response_model=ConversationDetail)
+def get_conversation(
+    conversation_id: UUID,
+    session: Session = Depends(get_session),
+    user: User = Depends(get_current_user),
+):
+    conversation = owned_conversation(session, conversation_id, user)
+    rows = session.exec(
+        select(Message)
+        .where(Message.conversation_id == conversation.id)
+        .order_by(col(Message.id))
+    ).all()
+
+    messages: list[MessageOut] = []
+    for row in rows:
+        # drop saved sources above the user's current clearance, in case it was lowered.
+        results = [
+            ChunkOut.model_validate(source)
+            for source in row.sources
+            if source["citation"]["access_level"] <= user.max_access_level
+        ]
+        messages.append(
+            MessageOut(role=row.role, content=row.content, mode=row.mode, results=results)
         )
 
-    try:
-        answer = rag_answer(req.query, results)
-        mode: Literal["rag", "citations_only"] = "rag"
-    except Exception:
-        # keep the app usable when ollama is disabled or unavailable.
-        answer = citations_only_answer(chunk_texts)
-        mode = "citations_only"
+    return ConversationDetail(
+        id=str(conversation.id),
+        title=conversation.title,
+        updated_at=conversation.updated_at,
+        messages=messages,
+    )
 
-    return ChatResponse(query=req.query, answer=answer, mode=mode, results=results)
+
+@app.delete("/conversations/{conversation_id}", status_code=204)
+def delete_conversation(
+    conversation_id: UUID,
+    session: Session = Depends(get_session),
+    user: User = Depends(get_current_user),
+):
+    conversation = owned_conversation(session, conversation_id, user)
+    session.delete(conversation)
+    session.commit()
