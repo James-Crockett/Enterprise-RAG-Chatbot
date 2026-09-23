@@ -22,12 +22,15 @@ def infer_source_type(path: Path) -> str:
     return "text"
 
 
+ACCESS_TIERS = {"public", "internal", "restricted", "confidential"}
+
+
 def infer_department(path: Path) -> str:
-    # super simple heuristic: folder name hints (hr/it/eng/research)
-    lowered = [p.lower() for p in path.parts]
-    for dept in ("hr", "it", "eng", "engineering", "research", "finance", "legal"):
-        if dept in lowered:
-            return "engineering" if dept == "eng" else dept
+    # layout is <tier>/<department>/file; files directly under a tier are general.
+    folders = [p.lower() for p in path.parent.parts]
+    for i, folder in enumerate(folders):
+        if folder in ACCESS_TIERS and i + 1 < len(folders):
+            return folders[i + 1]
     return "general"
 
 
