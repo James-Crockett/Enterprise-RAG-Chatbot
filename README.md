@@ -4,7 +4,6 @@ A permission-aware RAG chatbot for querying internal company-style documents. It
 
 The main project path is pgvector-backed retrieval with access checks in SQL. A FAISS prototype is kept under `rag/experiments/faiss` as a learning/comparison path.
 
-> This is a prototype for the RAG pipeline and access-control model. It is not a production system.
 
 ## Demo
 
