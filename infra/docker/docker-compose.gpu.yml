@@ -1,0 +1,11 @@
+# optional: run ollama on an nvidia gpu. needs the nvidia container toolkit.
+# docker compose -f docker-compose.yml -f docker-compose.gpu.yml up -d
+services:
+  ollama:
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
