@@ -10,3 +10,6 @@ wheels/
 .venv
 apps/web/node_modules
 *.tsbuildinfo
+
+# Local env files with real secrets
+.env
