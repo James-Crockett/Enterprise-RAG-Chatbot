@@ -18,7 +18,8 @@ https://github.com/user-attachments/assets/03f57462-72c0-4072-bbca-13587ef4a4f0
 - Filters retrieval by user access level before anything reaches the LLM
 - Optionally asks Ollama to generate a grounded answer from retrieved context
 - Returns answer text plus source citations
-- Provides a React UI for login, chat, filters, modes, and source inspection
+- Saves each user's chats in Postgres so they can reopen or delete them later
+- Provides a React UI for login, chat history, filters, modes, and source inspection
 
 ## Architecture
 
@@ -31,6 +32,7 @@ React UI (nginx)
 FastAPI
   /auth/login
   /chat
+  /conversations
   jwt auth
   permission-aware pgvector query
         |                         |
@@ -117,6 +119,12 @@ export USE_LLM='false'
 
 If you are not using the Docker DB service, apply `infra/docker/postgres/init.sql` to your local Postgres database before seeding.
 
+Postgres only runs `init.sql` when it creates a fresh data volume. If your `pgdata` volume predates chat history, apply the schema again. Every statement uses `IF NOT EXISTS`, so this is safe to rerun:
+
+```bash
+docker compose --env-file infra/docker/.env -f infra/docker/docker-compose.yml exec -T db psql -U rag -d rag_kb < infra/docker/postgres/init.sql
+```
+
 Seed and ingest:
 
 ```bash
@@ -170,6 +178,20 @@ document.access_level <= user.max_access_level
 ```
 
 This check runs in the retrieval SQL before context is sent to Ollama.
+
+## Chat History
+
+Every `/chat` call saves the question and the answer, including the cited sources, to the `conversations` and `messages` tables. Pass `conversation_id` to add to an existing chat. Leave it out to start a new one, and the response returns the new id.
+
+```text
+GET    /conversations        list the user's chats, newest first
+GET    /conversations/{id}   one chat with its messages and sources
+DELETE /conversations/{id}   delete a chat and its messages
+```
+
+A chat belongs to one user. For any other account, all three endpoints and `/chat` return 404. When a chat is reopened, the API drops saved sources above the user's current access level, in case that level was lowered after the chat happened.
+
+Each question still runs its own retrieval. Earlier turns are not sent to the LLM, so a follow-up like "what about in Toronto?" searches on those words alone.
 
 ## Verification
 

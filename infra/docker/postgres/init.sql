@@ -38,6 +38,31 @@ CREATE TABLE IF NOT EXISTS chunks (
 CREATE INDEX IF NOT EXISTS chunks_doc_id_idx ON chunks(document_id);
 CREATE INDEX IF NOT EXISTS chunks_access_level_idx ON chunks(access_level);
 
--- vector index for cosine search
-CREATE INDEX IF NOT EXISTS chunks_embedding_cos_idx
-  ON chunks USING ivfflat (embedding vector_cosine_ops) WITH (lists = 100);
+-- no ann index on embeddings: an ivfflat index built on an empty table only
+-- searches one near-empty list per query and drops results. an exact scan is
+-- fast at this size; add hnsw after loading data if the corpus grows large.
+
+-- conversations: saved chat threads, one owner each
+CREATE TABLE IF NOT EXISTS conversations (
+  id UUID PRIMARY KEY,
+  user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  title TEXT NOT NULL,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE INDEX IF NOT EXISTS conversations_user_updated_idx
+  ON conversations(user_id, updated_at DESC);
+
+-- messages: one row per turn; assistant rows keep the sources they cited
+CREATE TABLE IF NOT EXISTS messages (
+  id BIGSERIAL PRIMARY KEY,
+  conversation_id UUID NOT NULL REFERENCES conversations(id) ON DELETE CASCADE,
+  role TEXT NOT NULL CHECK (role IN ('user', 'assistant')),
+  content TEXT NOT NULL,
+  mode TEXT,
+  sources JSONB NOT NULL DEFAULT '[]'::jsonb,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE INDEX IF NOT EXISTS messages_conversation_idx ON messages(conversation_id, id);

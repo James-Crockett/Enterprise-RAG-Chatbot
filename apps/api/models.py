@@ -48,3 +48,29 @@ class Chunk(SQLModel, table=True):
 
     access_level: int = Field(default=1, nullable=False)
     embedding: List[float] = Field(sa_column=Column(Vector(384), nullable=False))
+
+
+class Conversation(SQLModel, table=True):
+    __tablename__ = "conversations"
+
+    id: UUID = Field(default_factory=uuid4, primary_key=True)
+    user_id: UUID = Field(foreign_key="users.id", index=True)
+    title: str
+    created_at: datetime = Field(default_factory=datetime.utcnow, nullable=False)
+    updated_at: datetime = Field(default_factory=datetime.utcnow, nullable=False)
+
+
+class Message(SQLModel, table=True):
+    __tablename__ = "messages"
+
+    id: Optional[int] = Field(default=None, primary_key=True)
+    conversation_id: UUID = Field(foreign_key="conversations.id", index=True)
+    role: str
+    content: str
+    mode: Optional[str] = None
+
+    # snapshot of the cited chunks so old answers keep their sources.
+    sources: List[Dict[str, Any]] = Field(
+        sa_column=Column(JSONB, nullable=False, default=[])
+    )
+    created_at: datetime = Field(default_factory=datetime.utcnow, nullable=False)
